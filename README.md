@@ -1,6 +1,7 @@
+Install pyllvm by doing
+pip3 install .
 
-Backend interface
-
+Then if you import pyllvm you will (eventually) find the following functions
 pyllvm:
 
     # Given filename, output LLVM IR
