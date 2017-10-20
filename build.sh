@@ -7,7 +7,7 @@ INSTALL_PREFIX="`pwd`/install"
 
 #Install dependencies
 
-PACKAGES="python3 llvm-3.9 clang-3.9"
+PACKAGES="python3 llvm-3.9 clang-3.9 libclang-3.9-dev"
 #llvm38-dev"
 
 for p in $PACKAGES; do
@@ -15,12 +15,4 @@ for p in $PACKAGES; do
     dpkg-query --show $p > /dev/null 2>&1 || sudo apt-get install -q -y --no-install-recommends $p || exit 1
 done
 
-
-mkdir -p build && cd build || exit 1
-VERBOSE=$VERBOSE $CMAKE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DLLVM_PREFIX=${LLVM_PREFIX} .. || exit 1
-VERBOSE=$VERBOSE make -j $CORES || exit 1
-
-mkdir -p $INSTALL_PREFIX || exit 1
-VERBOSE=$VERBOSE make -j $CORES install || exit 1
-
-
+pip3 install . --upgrade
