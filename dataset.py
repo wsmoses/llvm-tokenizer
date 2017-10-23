@@ -24,7 +24,6 @@ class Data():
     """ Dataset object
     :param input_type: Input type. Listed in InputType
     :param path: Path
-    :param fn: Filename
 
     """
     def __init__(self, path, *args, **kwargs ):
@@ -56,9 +55,11 @@ class Data():
 
 class Rawfile(Data):
     """ Existing files
+    :param fn: Filename
     :param src_path: Folder containing the source code with name fn and auxiliary files
 
     """
+
     def __init__(self, path, fn, src_path, *args, **kwargs):
         super(Rawfile, self).__init__(path, *args, **kwargs)
         self.src_path = src_path
@@ -194,11 +195,17 @@ class CLgen(Data):
     Now only supports Github
 
     """
-    def __init__(self, path, *args, **kwargs):
-        super(CLgen, self).__init__(path, type = True, *args, **kwargs)
+    def __init__(self, path, github = True, *args, **kwargs):
+        super(CLgen, self).__init__(path, *args, **kwargs)
 
         # type: 0 for clgen, 1 for github
-        self.github = type
+        self.github = github
+
+        # fetch_github will fetch all existing cl repo on github
+        # timeout is used to limited the time to collect github data
+        # TODO we might need to write our own fetch github
+        # if we need to generate exact number of examples
+
         if self.github:
             try:
                 self.github_username = kwargs["github_username"]
@@ -209,6 +216,14 @@ class CLgen(Data):
                 print("Please specify args for: ")
                 print(e)
                 raise
+        else:
+            try:
+                self.model_file = kwargs["model_file"]
+                self.sampler_file = kwargs["sampler_file"]
+            except Exception as e:
+                print("Using the example files.\n")
+                self.model_file = os.path.abspath("./clgen/model.json")
+                self.sampler_file = os.path.abspath("./clgen/sampler.json")
 
     def generate(self):
         # Try import clgen if installed
@@ -222,31 +237,41 @@ class CLgen(Data):
 
         db = "clgen.db"
 
-        # Github
         output_db = os.path.join(self.path, db)
         if not os.path.exists(output_db):
             clgen.dbutil.create_db(output_db, self.github)
 
-        import multiprocessing
-        import time
+        # Github
+        if (self.github):
+            import multiprocessing
+            import time
 
-        def fetch_github(output_db):
-            clgen._fetch.fetch_github(output_db, self.github_username, \
-                self.github_passwd, self.github_token)
+            def fetch_github(output_db):
+                clgen._fetch.fetch_github(output_db, self.github_username, \
+                    self.github_passwd, self.github_token)
 
-        p = multiprocessing.Process(target=fetch_github, args = (output_db,))
-        p.start()
-        p.join(self.github_timeout)
-        if p.is_alive():
-            print ("Running fetch_github for %d\n", self.github_timeout)
-            p.terminate()
-            p.join()
+            p = multiprocessing.Process(target=fetch_github, args = (output_db,))
+            p.start()
+            p.join(self.github_timeout)
+            if p.is_alive():
+                print ("Running fetch_github for %d\n", self.github_timeout)
+                p.terminate()
+                p.join()
+        else:
+            from labm8 import jsonutil
+            model_json = jsonutil.loads(open(self.model_file, "r").read())
+            print(model_json)
+            model = clgen.Model.from_json(model_json)
 
-        # Dump the github files
+            sampler_json = jsonutil.loads(open(self.sampler_file).read())
+            sampler = clgen.Sampler.from_json(sampler_json)
+
+            model.train()
+            sampler.sample(model)
+            output_db = sampler.cache(model)["kernels.db"]
+
+        # Dump the programs to files
         clgen.dbutil.dump_db(output_db, self.path+"/db", dir=True, input_samples=True)
-
-
-        # TODO add generate files
 
 # class Github(Data):
 #     def __init__(self, link, *args, **kwargs):
@@ -265,7 +290,10 @@ def test():
     c.generate()
 
     #clgen test
-    c = CLgen(path="./test2", github= True, github_username="GITHUBACCOUNT", github_passwd="", github_token="", github_timeout = 30)
+    c = CLgen(path="./test2", github= True, github_username="", github_passwd="", github_token="", github_timeout = 30)
+    c.generate()
+
+    c = CLgen(path= "./test3", github = False)
     c.generate()
 
 #TODO we can create object and add it to clgen db
