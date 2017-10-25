@@ -48,7 +48,7 @@ class CMakeBuild(build_ext):
 
         env = os.environ.copy()
         if 'LLVM_PREFIX' not in env:
-            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-3.9", "--prefix"], universal_newlines=True)).rstrip('\n')
+            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-5.0", "--prefix"], universal_newlines=True)).rstrip('\n')
         cmake_args.append("-DLLVM_PREFIX="+env["LLVM_PREFIX"])
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
                                                               self.distribution.get_version())
