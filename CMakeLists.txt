@@ -23,10 +23,11 @@ link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 llvm_map_components_to_libnames(llvm_libs support core irreader) #clang)
 
-add_subdirectory(third-party/pybind11)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 pybind11_add_module(pyllvm src/pyllvm.cc)
 target_link_libraries(pyllvm
     PRIVATE
+    clang
     clangAnalysis
     clangAST
     clangBasic
@@ -37,15 +38,15 @@ target_link_libraries(pyllvm
     clangParse
     clangSema
     clangSerialization
-    LLVMAnalysis
-    LLVMBitReader
-    LLVMBinaryFormat
-    LLVMCore
-    LLVMOption
-    LLVMSupport
-    tinfo
+#    LLVMAnalysis
+#    LLVMBitReader
+#    LLVMBinaryFormat
+#    LLVMCore
+#    LLVMOption
+#    LLVMSupport
+#    tinfo
 )
 
 # Link against LLVM libraries
-target_link_libraries(pyllvm PRIVATE ${llvm_libs})
+#target_link_libraries(pyllvm PRIVATE ${llvm_libs})
 

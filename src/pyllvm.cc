@@ -7,23 +7,25 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/PCHContainerOperations.h>
 
+
+#include <llvm/ADT/STLExtras.h>
+
+//#include <clang/tools/libclang/CIndexer.h>
+
 namespace py = pybind11;
 using namespace clang;
 
-std::unique_ptr<clang::ASTUnit> parseC(std::string filename) {
-    FileSystemOptions fops;
-    auto Diags = clang::CompilerInstance::createDiagnostics(new DiagnosticOptions());
-    auto res = clang::ASTUnit::LoadFromASTFile(filename,
-        RawPCHContainerReader(),
-        clang::ASTUnit::WhatToLoad::LoadEverything,
-        Diags,
-        fops,
-        /*debug info*/ false);
-    return res;
+struct CXTranslationUnitImpl {
+  void *CIdx;
+  clang::ASTUnit *TheASTUnit;
+  void *StringPool;
+  void *Diagnostics;
+  void *OverridenCursorsPool;
+  void *CommentToXML;
+};
 
-
-  #if 0
-  CXIndex index = clang_createIndex(0, 0);
+clang::ASTUnit* parseC(std::string filename) {
+  auto index = clang_createIndex(0, 0);
   CXTranslationUnit unit = clang_parseTranslationUnit(
     index,
     filename.c_str(),
@@ -31,11 +33,10 @@ std::unique_ptr<clang::ASTUnit> parseC(std::string filename) {
     /* unsaved files */ nullptr, 0,
     /* options */ CXTranslationUnit_None
   );
-  return unit;
-  #endif
+  return unit->TheASTUnit;
 }
 
 PYBIND11_MODULE(pyllvm, m) {
-  py::class_<clang::ASTUnit, std::unique_ptr<clang::ASTUnit>>(m,"ASTUnit");
+  py::class_<clang::ASTUnit>(m,"ASTUnit");//, std::unique_ptr<clang::ASTUnit>>(m,"ASTUnit");
   m.def("parseC", parseC);
 }
