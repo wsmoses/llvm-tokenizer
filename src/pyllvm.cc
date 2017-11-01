@@ -16,8 +16,10 @@
 
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/PassInfo.h>
 
@@ -139,6 +141,18 @@ std::vector<const llvm::PassInfo*> getOpts() {
 	return std::vector<const llvm::PassInfo*>(lister.passes.begin(), lister.passes.end());
 }
 
+bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
+  try{
+	  llvm::legacy::PassManager Passes;
+	  Passes.add(pi->createPass());
+	  Passes.add(llvm::createVerifierPass());
+	  Passes.run(*M);
+	}catch(std::exception e) {
+		return false;
+	}
+	return true;
+}
+
 using ListCasterBase = pybind11::detail::list_caster<std::vector<const llvm::PassInfo*>, const llvm::PassInfo*>;
 namespace pybind11 { namespace detail {
 template<> struct type_caster<std::vector<const llvm::PassInfo*>> : ListCasterBase {
@@ -196,7 +210,6 @@ PYBIND11_MODULE(pyllvm, m) {
 
   py::class_<llvm::Module>(m,"Module")
     .def("dump", [=](llvm::Module& lm) { 
-    	std::cerr << "dump lm " << (void*)&lm << std::endl;
         lm.print(llvm::dbgs(), nullptr, false, true);
         return;
     });
@@ -215,4 +228,5 @@ PYBIND11_MODULE(pyllvm, m) {
     });
   m.def("getLLVM", getLLVM);
   m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
+  m.def("applyOpt", applyOpt);
 }
