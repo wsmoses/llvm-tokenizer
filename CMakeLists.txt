@@ -27,6 +27,7 @@ add_definitions(${LLVM_DEFINITIONS})
 llvm_map_components_to_libnames(llvm_libs support core irreader) #clang)
 
 add_definitions(-DCLANG_BINARY=${LLVM_TOOLS_BINARY_DIR}/clang)
+set(CMAKE_EXE_LINKER_FLAGS " -static")
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 pybind11_add_module(pyllvm src/pyllvm.cc)
@@ -51,9 +52,14 @@ target_link_libraries(pyllvm
     LLVMCoroutines
     LLVMCoverage
     LLVMLTO
+    LLVMLanaiDesc
     LLVMMCJIT
     LLVMOption
     LLVMSupport
+    LLVMX86AsmParser
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
     tinfo
 )
 

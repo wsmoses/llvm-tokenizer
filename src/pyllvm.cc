@@ -1,4 +1,5 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 //#include <clang-c/Index.h>
 #include <string>
 #include <iostream>
@@ -18,6 +19,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/PassInfo.h>
 
 //#include <clang/tools/libclang/CIndexer.h>
 
@@ -114,9 +116,83 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename) {
 	return Act.takeModule();
 }
 
+//#ifdef LINK_POLLY_INTO_TOOLS
+//namespace polly {
+//void initializePollyPasses(llvm::PassRegistry &Registry);
+//}
+//#endif
+
+class PassLister : public llvm::PassRegistrationListener {
+public:
+	std::list<const llvm::PassInfo*> passes;
+	void passEnumerate(const llvm::PassInfo* pi) override {
+		passes.push_back(pi);
+	}
+	void passRegistered(const llvm::PassInfo* pi) override {}
+};
+
+llvm::PassRegistry* Registry;
+
+std::vector<const llvm::PassInfo*> getOpts() {
+	PassLister lister;
+	Registry->enumerateWith(&lister);
+	return std::vector<const llvm::PassInfo*>(lister.passes.begin(), lister.passes.end());
+}
+
+using ListCasterBase = pybind11::detail::list_caster<std::vector<const llvm::PassInfo*>, const llvm::PassInfo*>;
+namespace pybind11 { namespace detail {
+template<> struct type_caster<std::vector<const llvm::PassInfo*>> : ListCasterBase {
+    static handle cast(const std::vector<const llvm::PassInfo*> &src, return_value_policy, handle parent) {
+        return ListCasterBase::cast(src, return_value_policy::reference, parent);
+    }
+    static handle cast(const std::vector<const llvm::PassInfo*> *src, return_value_policy pol, handle parent) {
+        return cast(*src, pol, parent);
+    }
+};
+}}
 
 PYBIND11_MODULE(pyllvm, m) {
   Diags = new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &DiagOpts, new TextDiagnosticPrinter(llvm::errs(), &DiagOpts));
+
+  LLVMInitializeX86Target();
+  LLVMInitializeX86TargetMC();
+  LLVMInitializeX86AsmPrinter();
+  LLVMInitializeX86AsmParser();
+
+  // Initialize passes
+  Registry = llvm::PassRegistry::getPassRegistry();
+  llvm::initializeCore(*Registry);
+  llvm::initializeCoroutines(*Registry);
+  llvm::initializeScalarOpts(*Registry);
+  llvm::initializeObjCARCOpts(*Registry);
+  llvm::initializeVectorization(*Registry);
+  //llvm::initializeTapirOpts(*Registry);
+  llvm::initializeIPO(*Registry);
+  llvm::initializeAnalysis(*Registry);
+  llvm::initializeTransformUtils(*Registry);
+  llvm::initializeInstCombine(*Registry);
+  llvm::initializeInstrumentation(*Registry);
+  llvm::initializeTarget(*Registry);
+  // For codegen passes, only passes that do IR to IR transformation are
+  // supported.
+  llvm::initializeScalarizeMaskedMemIntrinPass(*Registry);
+  llvm::initializeCodeGenPreparePass(*Registry);
+  llvm::initializeAtomicExpandPass(*Registry);
+  llvm::initializeRewriteSymbolsLegacyPassPass(*Registry);
+  llvm::initializeWinEHPreparePass(*Registry);
+  llvm::initializeDwarfEHPreparePass(*Registry);
+  llvm::initializeSafeStackLegacyPassPass(*Registry);
+  llvm::initializeSjLjEHPreparePass(*Registry);
+  llvm::initializePreISelIntrinsicLoweringLegacyPassPass(*Registry);
+  llvm::initializeGlobalMergePass(*Registry);
+  llvm::initializeInterleavedAccessPass(*Registry);
+  llvm::initializeCountingFunctionInserterPass(*Registry);
+  llvm::initializeUnreachableBlockElimLegacyPassPass(*Registry);
+  llvm::initializeExpandReductionsPass(*Registry);
+
+//#ifdef LINK_POLLY_INTO_TOOLS
+//  polly::initializePollyPasses(*Registry);
+//#endif
 
   py::class_<llvm::Module>(m,"Module")
     .def("dump", [=](llvm::Module& lm) { 
@@ -124,14 +200,19 @@ PYBIND11_MODULE(pyllvm, m) {
         lm.print(llvm::dbgs(), nullptr, false, true);
         return;
     });
+  py::class_<llvm::PassInfo>(m,"PassInfo")
+    .def("getPassName", [](llvm::PassInfo& pi) {
+    	return std::string(pi.getPassName());
+    })
+    .def("isAnalysis", &llvm::PassInfo::isAnalysis)
+    ;
+
   py::class_<clang::ASTUnit>(m,"ASTUnit")
-    .def("printStats", [=](ASTUnit& ast) {
-        ast.getASTContext().PrintStats();
-        return;
-    }).def("dump", [=](ASTUnit& ast) {
+    .def("dump", [=](ASTUnit& ast) {
         auto ad = clang::CreateASTDumper("", true, false, false);
         ad->Initialize(ast.getASTContext());
         ad->HandleTranslationUnit(ast.getASTContext());
     });
   m.def("getLLVM", getLLVM);
+  m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
 }
