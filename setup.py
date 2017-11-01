@@ -47,9 +47,12 @@ class CMakeBuild(build_ext):
             build_args += ['--', '-j2']
 
         env = os.environ.copy()
+        print(env)
         if 'LLVM_PREFIX' not in env:
+            #env['LLVM_PREFIX'] = str(subprocess.check_output(["/home/wmoses/git/Parallel-IR/build/bin/llvm-config", "--prefix"], universal_newlines=True)).rstrip('\n')
             env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-5.0", "--prefix"], universal_newlines=True)).rstrip('\n')
         cmake_args.append("-DLLVM_PREFIX="+env["LLVM_PREFIX"])
+        print(cmake_args)
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
                                                               self.distribution.get_version())
         env['VERBOSE'] = '1'                                                            

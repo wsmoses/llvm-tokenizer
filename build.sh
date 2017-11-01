@@ -17,4 +17,7 @@ for p in $PACKAGES; do
     dpkg-query --show $p > /dev/null 2>&1 || sudo apt-get install -q -y --no-install-recommends $p || exit 1
 done
 
-sudo pip3 install . --upgrade
+#export LLVM_PREFIX="`~/git/Parallel-IR/build/bin/llvm-config --prefix`"
+#echo $LLVM_PREFIX
+sudo pip3 install . --upgrade --verbose 
+# --install-option="--llvm=$LLVM_PREFIX"

@@ -4,8 +4,8 @@ pip3 install .
 Then if you import pyllvm you will (eventually) find the following functions
 pyllvm:
 
-    # Given filename, output LLVM IR
-    def parseC(filename):
+    # Given filename, output LLVM IR Module
+    def getLLVM(filename):
 
     # Get the list of optimization passes
     def getOpts():
