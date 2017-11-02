@@ -1,8 +1,5 @@
 CMAKE=${CMAKE:="`which cmake`"}
 VERBOSE=${VERBOSE:=0}
-core_count=`lscpu -p | egrep -v '^#' | wc -l`
-CORES=${CORES:=$core_count}
-INSTALL_PREFIX="`pwd`/install"
 
 LLVM_VER="5.0"
 #Install dependencies

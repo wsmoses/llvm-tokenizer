@@ -25,17 +25,17 @@ def getRealOpts():
     return opts
 
 opts = getRealOpts()
-#for o in opts:
-#    print(o.getPassArgument() + " " + o.getPassName())
+for o in opts:
+    print(o.getPassArgument() + " " + o.getPassName())
 
-g = getLLVM('mtemp.c')
-print(g)
-createBinary(g, 'temp.o')
-from sys import exit; exit(1)
+#g = getLLVM('mtemp.c')
+#print(g)
+#createBinary(g, 'temp.o')
+#from sys import exit; exit(1)
 
 print(len(opts))
 
-for i, o in enumerate(opts):
-    print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassName())
-    applyOpt(o, g)
-    g.dump()
+#for i, o in enumerate(opts):
+#    print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassName())
+#    applyOpt(o, g)
+#    g.dump()
