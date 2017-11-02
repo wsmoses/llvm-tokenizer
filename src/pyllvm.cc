@@ -20,7 +20,9 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/Option/ArgList.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/TargetRegistry.h>
 #include <llvm/PassInfo.h>
 
 //#include <clang/tools/libclang/CIndexer.h>
@@ -60,19 +62,6 @@ using namespace clang;
 using namespace clang;
 using namespace clang::driver;
 
-#define STRING(s) #s
-
-// This function isn't referenced outside its translation unit, but it
-// can't use the "static" keyword because its address is used for
-// GetMainExecutable (since some platforms don't support taking the
-// address of main, and some platforms can't implement GetMainExecutable
-// without being given the address of a function in the main executable).
-std::string GetExecutablePath(const char *Argv0) {
-  // This just needs to be some symbol in the binary; C++ doesn't
-  // allow taking the address of ::main however.
-  void *MainAddr = (void*) (intptr_t) GetExecutablePath;
-  return llvm::sys::fs::getMainExecutable(Argv0, MainAddr);
-}
 
 llvm::LLVMContext llvmContext;
 DiagnosticOptions DiagOpts;
@@ -84,8 +73,7 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename) {
   	
   	std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
 
-  	std::string PythonPath = llvm::sys::fs::getMainExecutable(STRING(CLANG_BINARY), (void*) (intptr_t)getLLVM);
-	Driver TheDriver(PythonPath, llvm::sys::getProcessTriple(), *Diags);
+	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
 
 	SmallVector<const char *, 2> Args {"clang", filename.c_str()};
 	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
@@ -165,13 +153,54 @@ template<> struct type_caster<std::vector<const llvm::PassInfo*>> : ListCasterBa
 };
 }}
 
+bool createBinary(llvm::Module* M, std::string output) {
+	std::string tmpfile(std::tmpnam(nullptr));
+
+	{
+		std::error_code EC;
+		llvm::raw_fd_ostream dest(tmpfile.c_str(), EC, llvm::sys::fs::F_None);
+
+		if (EC) {
+		  llvm::errs() << "Could not open file: " << EC.message();
+		  return false;
+		}
+
+	    M->print(dest, nullptr, false, false);
+		dest.flush();
+	}
+
+
+  	std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
+	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
+
+	llvm::SmallVector<const char *, 6> Args {"clang", "-x", "ir", tmpfile.c_str(), "-o", output.c_str()};
+	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
+	if (!C) return false;
+
+	llvm::SmallVector<std::pair<int, const Command *>, 2> FailingCommands;
+	int Res = TheDriver.ExecuteCompilation(*C, FailingCommands);
+
+	if (Res < 0) {
+		for(auto c : FailingCommands) {
+			c.second->Print(llvm::errs(), "\n", true);
+		}
+		return false;
+	}
+
+    return true;
+}
+
 PYBIND11_MODULE(pyllvm, m) {
   Diags = new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &DiagOpts, new TextDiagnosticPrinter(llvm::errs(), &DiagOpts));
 
-  LLVMInitializeX86Target();
-  LLVMInitializeX86TargetMC();
-  LLVMInitializeX86AsmPrinter();
-  LLVMInitializeX86AsmParser();
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+
+  //LLVMInitializeX86Target();
+  //LLVMInitializeX86TargetMC();
+  //LLVMInitializeX86AsmPrinter();
+  //LLVMInitializeX86AsmParser();
 
   // Initialize passes
   Registry = llvm::PassRegistry::getPassRegistry();
@@ -229,4 +258,5 @@ PYBIND11_MODULE(pyllvm, m) {
   m.def("getLLVM", getLLVM);
   m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
   m.def("applyOpt", applyOpt);
+  m.def("createBinary", createBinary);
 }

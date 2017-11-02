@@ -11,7 +11,7 @@ pyllvm:
     def getOpts():
 
     # Run individual opt
-    def runOpt(ir, optname)
+    def applyOpt(opt, ir)
 
     # Create Binary from IR
     def createBinary(ir)

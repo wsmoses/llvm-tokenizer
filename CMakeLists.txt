@@ -26,7 +26,7 @@ link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 llvm_map_components_to_libnames(llvm_libs support core irreader) #clang)
 
-add_definitions(-DCLANG_BINARY=${LLVM_TOOLS_BINARY_DIR}/clang)
+add_definitions(-DCLANG_BINARY="${LLVM_TOOLS_BINARY_DIR}/clang")
 set(CMAKE_EXE_LINKER_FLAGS " -static")
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
