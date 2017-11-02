@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.0`)
 
 project("autophase")
-set(AUTOPHASE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(AUTOPHASE_SOURCE_DIR "${PROJECT_SOURCE_DIR}")
 set(AUTOPHASE_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+
+message(STATUS "source dir ${AUTOPHASE_SOURCE_DIR}")
+message(STATUS "binary dir ${AUTOPHASE_BINARY_DIR}")
 
 message(STATUS "GIVEN LLVM PREFIX ${LLVM_PREFIX}")
 
