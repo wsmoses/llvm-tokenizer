@@ -14,7 +14,7 @@ pyllvm:
     def applyOpt(opt, ir)
 
     # Create Binary from IR
-    def createBinary(ir)
+    def createBinary(ir, output)
 
 
 # Dataset Infrastructure 

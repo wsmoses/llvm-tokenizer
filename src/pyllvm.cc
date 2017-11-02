@@ -241,10 +241,20 @@ PYBIND11_MODULE(pyllvm, m) {
     .def("dump", [=](llvm::Module& lm) { 
         lm.print(llvm::dbgs(), nullptr, false, true);
         return;
+    })
+    .def("__str__", [=](llvm::Module& lm) {
+        std::string str;
+        llvm::raw_string_ostream rso(str);
+        lm.print(llvm::dbgs(), nullptr, false, false);
+        return str;
     });
+
   py::class_<llvm::PassInfo>(m,"PassInfo")
     .def("getPassName", [](llvm::PassInfo& pi) {
     	return std::string(pi.getPassName());
+    })
+    .def("getPassArgument", [](llvm::PassInfo& pi) {
+    	return std::string(pi.getPassArgument());
     })
     .def("isAnalysis", &llvm::PassInfo::isAnalysis)
     ;

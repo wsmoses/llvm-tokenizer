@@ -21,11 +21,15 @@ def getRealOpts():
     del opts[224]
     del opts[224]
     del opts[224]
+    opts.sort(key=lambda x:x.getPassArgument())
     return opts
 
 opts = getRealOpts()
+#for o in opts:
+#    print(o.getPassArgument() + " " + o.getPassName())
 
 g = getLLVM('mtemp.c')
+print(g)
 createBinary(g, 'temp.o')
 from sys import exit; exit(1)
 
