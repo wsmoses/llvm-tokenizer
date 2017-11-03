@@ -16,6 +16,7 @@
 
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/Attributes.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -103,7 +104,11 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename) {
 	if (!Clang.ExecuteAction(Act))
 		return nullptr;
 
-	return Act.takeModule();
+	auto M = Act.takeModule();
+    for(llvm::Function& f:M->functions()) {
+        f.removeFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
+    }
+    return M;
 }
 
 //#ifdef LINK_POLLY_INTO_TOOLS
@@ -245,7 +250,7 @@ PYBIND11_MODULE(pyllvm, m) {
     .def("__str__", [=](llvm::Module& lm) {
         std::string str;
         llvm::raw_string_ostream rso(str);
-        lm.print(llvm::dbgs(), nullptr, false, false);
+        lm.print(rso, nullptr, false, false);
         return str;
     });
 
