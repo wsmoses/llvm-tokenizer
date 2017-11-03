@@ -48,4 +48,6 @@ If run into
     > pragma table_info(ContentFiles);
     0|id|TEXT|1||0
     1|contents|TEXT|1||0
+### Common Errors
 
+1. If some tests in the build fail on a locale detail, replace `en_gb.utf-8` with `en_US.UTF-8` in `clgen/tests/_example.py`
