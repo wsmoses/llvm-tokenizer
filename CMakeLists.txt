@@ -20,7 +20,7 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 if (NOT LLVM_PACKAGE_VERSION EQUAL 5.0.0)
-  message(STATUS  " Must use LLVM 5.0.0, but found " ${LLVM_PACKAGE_VERSION)
+  message(STATUS  " Must use LLVM 5.0.0, but found " ${LLVM_PACKAGE_VERSION})
   return()
 endif()
 
