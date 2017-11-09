@@ -101,6 +101,10 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', '-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
         subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp)
 
+        ##CLgen
+        subprocess.check_call("./configure --with-cuda".split(" "), cwd="./third-party/clgen", env=env)
+        subprocess.check_call("make", cwd="./third-party/clgen", shell=True)
+
 
 class CSmithExtension(Extension):
     def __init__(self, name, sourcedir=''):
