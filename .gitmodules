@@ -1,3 +1,6 @@
 [submodule "third-party/pybind11"]
 	path = third-party/pybind11
 	url = https://github.com/pybind/pybind11
+[submodule "third-party/clgen"]
+	path = third-party/clgen
+	url = https://github.com/ChrisCummins/clgen.git
