@@ -4,3 +4,6 @@
 [submodule "third-party/clgen"]
 	path = third-party/clgen
 	url = https://github.com/ChrisCummins/clgen.git
+[submodule "third-party/csmith"]
+	path = third-party/csmith
+	url = https://github.com/csmith-project/csmith.git
