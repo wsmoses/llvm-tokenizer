@@ -35,41 +35,6 @@ class CMakeBuild(build_ext):
 
     def build_extension(self, ext):
 
-        # Create build dir
-        if not os.path.exists(self.build_temp):
-            os.makedirs(self.build_temp)
-
-
-        print("downloading csmith\n")
-        try:
-            # download source code to build_temp
-            url ="http://embed.cs.utah.edu/csmith/csmith-2.3.0.tar.gz"
-            build_path = self.build_temp
-            fname = os.path.join(build_path, url.split('/')[-1])
-            urllib.request.urlretrieve(url, fname)
-
-            # extract source to third party
-            tar = tarfile.open(fname, "r:gz")
-
-            tp_path = os.path.join(ext.sourcedir, "third-party")
-            tar.extractall(tp_path)
-            csmith_build_path = os.path.abspath(os.path.join(tp_path, tar.getnames()[0]))
-            tar.close()
-
-            # inplace build
-            print("building csmith\n")
-            os.makedirs(csmith_build_path, exist_ok=True)
-            subprocess.check_call(['cmake', csmith_build_path], cwd=csmith_build_path)
-            subprocess.check_call(['make'], cwd=csmith_build_path)
-
-            #os.environ['CSMITH'] = csmith_build_path
-            print("Csmith executable: "+csmith_build_path+"/src/csmith")
-            print("Csmith library path: "+csmith_build_path+"/runtime" )
-
-        except Extension as e:
-            print(e)
-            raise
-
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
                       '-DPYTHON_EXECUTABLE=' + sys.executable]
@@ -90,7 +55,7 @@ class CMakeBuild(build_ext):
         print(env)
         if 'LLVM_PREFIX' not in env:
             #env['LLVM_PREFIX'] = str(subprocess.check_output(["/home/wmoses/git/Parallel-IR/build/bin/llvm-config", "--prefix"], universal_newlines=True)).rstrip('\n')
-            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-5.0", "--prefix"], universal_newlines=True)).rstrip('\n')
+            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config", "--prefix"], universal_newlines=True)).rstrip('\n')
         cmake_args.append("-DLLVM_PREFIX="+env["LLVM_PREFIX"])
         print(cmake_args)
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
