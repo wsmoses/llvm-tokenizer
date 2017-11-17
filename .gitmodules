@@ -7,3 +7,6 @@
 [submodule "third-party/csmith"]
 	path = third-party/csmith
 	url = https://github.com/csmith-project/csmith.git
+[submodule "third-party/deap"]
+	path = third-party/deap
+	url = git@github.com:DEAP/deap.git
