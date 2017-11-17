@@ -1,0 +1,16 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: wsmoses/autophase:latest
+    steps:
+      - checkout
+      - run:
+          name: submodules
+          command: |
+            git submodule sync
+            git submodule update --init --recursive
+
+      - run:
+          name: Build
+          command: ./build.sh 
