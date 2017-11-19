@@ -20,3 +20,4 @@ RUN python3.6 -m pip install wheel setuptools --upgrade
 ENV CPLUS_INCLUDE_PATH "/usr/include/python3.6m/"
 
 
+RUN apt-get install -y --no-install-recommends oclgrind
