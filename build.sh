@@ -14,4 +14,4 @@ for p in $PACKAGES; do
     dpkg-query --show $p > /dev/null 2>&1 || sudo apt-get install -q -y --no-install-recommends $p || exit 1
 done
 
-sudo pip3 install . --upgrade --verbose 
+sudo python3.6 -m pip install . --upgrade --verbose 
