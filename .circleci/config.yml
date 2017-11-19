@@ -3,6 +3,7 @@ jobs:
   build:
     docker:
       - image: wsmoses/autophase:latest
+    resource_class: xlarge
     steps:
       - checkout
       - run:
