@@ -69,7 +69,7 @@ class CMakeBuild(build_ext):
 
         ##CLgen
         subprocess.check_call("./configure --with-cuda".split(" "), cwd="./third-party/clgen", env=env)
-        subprocess.check_call("make", cwd="./third-party/clgen", shell=True)
+        subprocess.check_call(["make", "PYTHON="+sys.executable], cwd="./third-party/clgen", shell=True)
 
 
         ##CSmith
