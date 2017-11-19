@@ -3,7 +3,7 @@
 	url = https://github.com/pybind/pybind11
 [submodule "third-party/clgen"]
 	path = third-party/clgen
-	url = git@github.com:DhashS/clgen.git
+	url = git@github.com:Auto-Commutator/clgen.git
 [submodule "third-party/csmith"]
 	path = third-party/csmith
 	url = https://github.com/csmith-project/csmith.git
