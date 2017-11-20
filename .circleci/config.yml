@@ -14,4 +14,8 @@ jobs:
 
       - run:
           name: Build
-          command: ./build.sh 
+          command: ./build.sh
+
+      - run:
+          name: Test-clgen
+          command: cd test && python3.6 ./clgentest.py
