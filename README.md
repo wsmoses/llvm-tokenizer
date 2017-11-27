@@ -19,11 +19,13 @@ pyllvm:
 
 # Dataset Infrastructure 
 
-## CSmith
-Follow the installation instructions in: [http://embed.cs.utah.edu/csmith/](http://embed.cs.utah.edu/csmith/)
-
+## CSmith and DEAP
+[http://embed.cs.utah.edu/csmith/](http://embed.cs.utah.edu/csmith/)
 The source code is [CSmith Github Page](https://github.com/csmith-project/csmith)
-The template path is csmith/runtime 
+The CSmith template path is ./third-party/csmith/runtime 
+
+Instructions for using evolutionary algorithms in DEAP:
+[https://github.com/DEAP/deap](https://github.com/DEAP/deap)
 
 ## Clgen
 Follow the installation instructions in: [https://chriscummins.cc/clgen/](https://chriscummins.cc/clgen/)

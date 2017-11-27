@@ -72,9 +72,9 @@ class CMakeBuild(build_ext):
         subprocess.check_call("make PYTHON=%s" % (sys.executable,), cwd="./third-party/clgen", shell=True)
 
         ##CSmith
-        #subprocess.check_call("./configure".split(" "), cwd="./third-party/csmith", env=env)
-        #subprocess.check_call("make", cwd="./third-party/csmith", shell=True)
-        #subprocess.check_call("make install", cwd="./third-party/csmith", shell=True)
+        subprocess.check_call("./configure".split(" "), cwd="./third-party/csmith", env=env)
+        subprocess.check_call("make", cwd="./third-party/csmith", shell=True)
+        subprocess.check_call("make install", cwd="./third-party/csmith", shell=True)
 
 
 
@@ -90,6 +90,7 @@ setup(
     author_email='wmoses@mit.edu',
     description='Some python LLVM bindings',
     long_description='',
+    install_requires=['deap',],
     ext_modules=[CMakeExtension('pyllvm')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
