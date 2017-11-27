@@ -21,3 +21,4 @@ ENV CPLUS_INCLUDE_PATH "/usr/include/python3.6m/"
 
 
 RUN apt-get install -y --no-install-recommends oclgrind
+RUN apt-get install -y --no-install-recommends m4
