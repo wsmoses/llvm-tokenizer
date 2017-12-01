@@ -19,3 +19,7 @@ jobs:
       - run:
           name: Test-clgen
           command: cd test && python3.6 ./clgentest.py
+      
+      - run:
+          name: Test-pytorch
+          command: cd test && python3.6 ./pytorchtest.py
