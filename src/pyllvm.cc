@@ -68,7 +68,7 @@ llvm::LLVMContext llvmContext;
 DiagnosticOptions DiagOpts;
 DiagnosticsEngine* Diags;
 
-std::unique_ptr<llvm::Module> getLLVM(std::string filename) {
+std::unique_ptr<llvm::Module> getLLVM(std::string filename, std::vector<std::string> addl_args) {
 	std::unique_ptr<llvm::Module> mod;
 	EmitLLVMOnlyAction Act(&llvmContext);
   	
@@ -77,6 +77,16 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename) {
 	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
 
 	SmallVector<const char *, 2> Args {"clang", filename.c_str()};
+    for(std::string& s: addl_args) {
+        printf("adding something %p %s\n", s.c_str(), s.c_str());
+        Args.emplace_back(s.c_str());
+    }
+    printf("total:%d new:%d\n", Args.size(), addl_args.size());
+    for(auto& a: Args) {
+        printf("arg %p:\n", a);
+        printf("arg val %s:\n", a);
+    }
+
 	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
 	if (!C)
 	return nullptr;

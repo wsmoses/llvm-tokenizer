@@ -61,7 +61,7 @@ opts = getRealOpts()
 #    print(o.getPassArgument() + " " + o.getPassName())
 #print(len(opts))
 
-g = getLLVM('temp.c')
+g = getLLVM('temp.c', [])
 print(g)
 #createBinary(g, 'temp.o')
 #from sys import exit; exit(1)
