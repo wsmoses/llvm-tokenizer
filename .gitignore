@@ -1,3 +1,4 @@
 build/
 corpus.tar.gz
 *.pyc
+*.swp

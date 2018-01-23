@@ -1,27 +1,29 @@
-FROM nvidia/cuda:9.0-devel-ubuntu17.04
+FROM nvidia/cuda:8.0-cudnn7-devel-ubuntu16.04
 
-RUN echo "deb http://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1604/x86_64 /" > /etc/apt/sources.list.d/nvidia-ml.list
-
-ENV CUDNN_VERSION 7.0.3.11
-LABEL com.nvidia.cudnn.version="${CUDNN_VERSION}"
-ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update
+RUN apt-get install -y --no-install-recommends wget ca-certificates
 
-RUN apt install -y --no-install-recommends wget
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key --no-check-certificate | apt-key add -
-RUN echo "deb http://apt.llvm.org/zesty/ llvm-toolchain-zesty-5.0 main" >> /etc/apt/sources.list
+RUN echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main" >> /etc/apt/sources.list
 RUN apt-get update
-RUN apt-get install -y --no-install-recommends python3.6-dev python3 libpython3.6-dev python3-pip libpython3.6-dev
-RUN apt-get install -y llvm-5.0-runtime libllvm5.0 llvm-5.0-dev clang-5.0 libclang-5.0-dev
-RUN apt-get install -y llvm-3.9-runtime libllvm3.9 llvm-3.9-dev clang-3.9 libclang-3.9-dev
-RUN apt-get install -y --no-install-recommends cmake build-essential ssh git curl binutils-dev sudo libz-dev unzip nvidia-cuda-dev ninja-build
 
-RUN python3.6 -m pip install wheel setuptools --upgrade
-ENV CPLUS_INCLUDE_PATH "/usr/include/python3.6m/"
+RUN apt-get install -y --no-install-recommends cmake build-essential ssh git curl binutils-dev sudo libz-dev unzip ninja-build m4
+
+RUN apt-get install -y --no-install-recommends llvm-5.0 llvm-5.0-runtime libllvm5.0 llvm-5.0-dev clang-5.0 libclang-5.0-dev
+#libjsoncpp1 libstdc++-6-dev libgcc-6-dev libobjc-6-dev libclang1-5.0
+
+RUN echo 'export PATH=/opt/conda/bin:$PATH' > /etc/profile.d/conda.sh && \
+    wget --quiet --no-check-certificate https://repo.continuum.io/archive/Anaconda3-5.0.1-Linux-x86_64.sh -O ~/anaconda.sh && \
+    /bin/bash ~/anaconda.sh -b -p /opt/conda && \
+    rm ~/anaconda.sh
 
 
-RUN apt-get install -y --no-install-recommends oclgrind
-RUN apt-get install -y --no-install-recommends m4
 
-RUN python3.6 -m pip install http://download.pytorch.org/whl/cu80/torch-0.2.0.post3-cp36-cp36m-manylinux1_x86_64.whl 
-RUN python3.6 -m pip install torchvision
+
+#ENV CPLUS_INCLUDE_PATH "/usr/include/python3.6m/"
+ENV PATH /opt/conda/bin:$PATH
+
+RUN conda install pytorch torchvision -c pytorch
+#RUN conda install pytorch torchvision cuda90 -c pytorch
+
+RUN python -m pip install tensorflow-gpu
