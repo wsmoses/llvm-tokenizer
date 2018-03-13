@@ -215,7 +215,7 @@ def central_agent(net_params_queues, exp_queues):
             #if epoch % MODEL_SAVE_INTERVAL == 0:
                 # Save the neural net parameters to disk.
             #    save_path = saver.save(sess, SUMMARY_DIR + "/nn_model_ep_" +
-                                       str(epoch) + ".ckpt")
+            #                           str(epoch) + ".ckpt")
             #    logging.info("Model saved in file: " + save_path)
             #    testing(epoch, 
             #        SUMMARY_DIR + "/nn_model_ep_" + str(epoch) + ".ckpt", 
@@ -328,8 +328,8 @@ def agent(agent_id, net_params_queue, exp_queue):
 
             # this should be S_INFO number of terms
             # 1D index for 2D [NUM_PASSES, NUM_PASSES] 
-            linear_idx = it * NUM_OPTIONS + action_index 
-            state[ linear_idx , -1] = 1;
+            #linear_idx = it * NUM_OPTIONS + action_index 
+            #state[ linear_idx , -1] = 1;
             #state[0, -1] = VIDEO_BIT_RATE[selected_pass] / float(np.max(VIDEO_BIT_RATE))  # last quality
             #state[1, -1] = buffer_size / BUFFER_NORM_FACTOR  # 10 sec
             #state[2, -1] = float(video_chunk_size) / float(delay) / M_IN_K  # kilo byte / ms
