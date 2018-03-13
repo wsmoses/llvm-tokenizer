@@ -212,14 +212,14 @@ def central_agent(net_params_queues, exp_queues):
             writer.add_summary(summary_str, epoch)
             writer.flush()
 
-            #if epoch % MODEL_SAVE_INTERVAL == 0:
+            if epoch % MODEL_SAVE_INTERVAL == 0:
                 # Save the neural net parameters to disk.
-            #    save_path = saver.save(sess, SUMMARY_DIR + "/nn_model_ep_" +
-            #                           str(epoch) + ".ckpt")
-            #    logging.info("Model saved in file: " + save_path)
-            #    testing(epoch, 
-            #        SUMMARY_DIR + "/nn_model_ep_" + str(epoch) + ".ckpt", 
-            #        test_log_file)
+                save_path = saver.save(sess, SUMMARY_DIR + "/nn_model_ep_" +
+                                       str(epoch) + ".ckpt")
+                logging.info("Model saved in file: " + save_path)
+                testing(epoch, 
+                    SUMMARY_DIR + "/nn_model_ep_" + str(epoch) + ".ckpt", 
+                    test_log_file)
 
 
 #def agent(agent_id, all_cooked_time, all_cooked_bw, net_params_queue, exp_queue):
