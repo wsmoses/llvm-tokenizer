@@ -20,11 +20,21 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Mangler.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/TargetRegistry.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/PassInfo.h>
+
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/LambdaResolver.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/Target/TargetMachine.h>
 
 //#include <clang/tools/libclang/CIndexer.h>
 
@@ -60,6 +70,9 @@ using namespace clang;
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
+
+#include <sys/time.h>
+
 using namespace clang;
 using namespace clang::driver;
 
@@ -71,7 +84,7 @@ DiagnosticsEngine* Diags;
 std::unique_ptr<llvm::Module> getLLVM(std::string filename, std::vector<std::string> addl_args) {
 	std::unique_ptr<llvm::Module> mod;
 	EmitLLVMOnlyAction Act(&llvmContext);
-  	
+
   	std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
 
 	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
@@ -205,6 +218,70 @@ bool createBinary(llvm::Module* M, std::string output) {
     return true;
 }
 
+class AutoJIT {
+private:
+  std::unique_ptr<llvm::TargetMachine> TM_;
+  const llvm::DataLayout DL_;
+  llvm::orc::RTDyldObjectLinkingLayer objectLayer_;
+  llvm::orc::IRCompileLayer<decltype(objectLayer_), llvm::orc::SimpleCompiler>
+    compileLayer_;
+
+public:
+  AutoJIT() :
+    TM_(llvm::EngineBuilder().selectTarget()),
+    DL_(TM_->createDataLayout()),
+    objectLayer_([]() { return std::make_shared<llvm::SectionMemoryManager>(); }),
+    compileLayer_(objectLayer_, llvm::orc::SimpleCompiler(*TM_)) {
+      std::string err;
+      llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr, &err);
+      if (err != "") {
+        throw std::runtime_error("Failed to initialize library: " + err);
+      }
+  }
+
+  using ModuleHandle = decltype(compileLayer_)::ModuleHandleT;
+
+  llvm::TargetMachine& getTargetMachine() {
+    return *TM_;
+  }
+
+  ModuleHandle addModule(std::unique_ptr<llvm::Module> M) {
+    M->setTargetTriple(TM_->getTargetTriple().str());
+    auto Resolver = llvm::orc::createLambdaResolver(
+        [&](const std::string& Name) {
+          if (auto Sym = compileLayer_.findSymbol(Name, false))
+            return Sym;
+          return llvm::JITSymbol(nullptr);
+        },
+        [](const std::string& Name) {
+          if (auto SymAddr = llvm::RTDyldMemoryManager::getSymbolAddressInProcess(Name))
+            return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
+          return llvm::JITSymbol(nullptr);
+        });
+
+    auto res = compileLayer_.addModule(std::move(M), std::move(Resolver));
+    assert(res && "Failed to JIT compile.");
+    return *res;
+  }
+
+  llvm::JITSymbol findSymbol(const std::string Name) {
+    std::string MangledName;
+    llvm::raw_string_ostream MangledNameStream(MangledName);
+    llvm::Mangler::getNameWithPrefix(MangledNameStream, Name, DL_);
+    return compileLayer_.findSymbol(MangledNameStream.str(), true);
+  }
+
+  llvm::JITTargetAddress getSymbolAddress(const std::string Name) {
+    auto res = findSymbol(Name).getAddress();
+    assert(res && "Could not find symbol");
+    return *res;
+  }
+};
+
+static inline unsigned long long todval (struct timeval *tp) {
+    return tp->tv_sec * 1000 * 1000 + tp->tv_usec;
+}
+
 PYBIND11_MODULE(pyllvm, m) {
   Diags = new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &DiagOpts, new TextDiagnosticPrinter(llvm::errs(), &DiagOpts));
 
@@ -253,7 +330,7 @@ PYBIND11_MODULE(pyllvm, m) {
 //#endif
 
   py::class_<llvm::Module>(m,"Module")
-    .def("dump", [=](llvm::Module& lm) { 
+    .def("dump", [=](llvm::Module& lm) {
         lm.print(llvm::dbgs(), nullptr, false, true);
         return;
     })
@@ -262,6 +339,22 @@ PYBIND11_MODULE(pyllvm, m) {
         llvm::raw_string_ostream rso(str);
         lm.print(rso, nullptr, false, false);
         return str;
+    })
+    .def("clone", [=](llvm::Module& lm) {
+        return llvm::CloneModule(&lm);
+    })
+    .def("timeFunction", [=](llvm::Module& lm, std::string fn) {
+      AutoJIT j;
+      j.addModule(llvm::CloneModule(&lm));
+      auto fun = (void (*)())j.getSymbolAddress(fn);
+
+
+      struct timeval t1, t2;
+      gettimeofday(&t1,0);
+      fun();
+      gettimeofday(&t2,0);
+      unsigned long long runtime_ms = (todval(&t2)-todval(&t1))/1000;
+      return runtime_ms/1000.0;
     });
 
   py::class_<llvm::PassInfo>(m,"PassInfo")
@@ -284,4 +377,5 @@ PYBIND11_MODULE(pyllvm, m) {
   m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
   m.def("applyOpt", applyOpt);
   m.def("createBinary", createBinary);
+
 }
