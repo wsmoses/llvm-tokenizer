@@ -281,9 +281,9 @@ class CLgen(Data):
 def test():
 
     # Csmith test
-    c = Csmith(path="./test/", csmith_path="/Users/qijing.huang/Documents/LegUp+RNN/csmith/src", options="--no-structs --no-pointers --no-math64 --max-funcs 4 --no-unions", template_path="/Users/qijing.huang/Documents/LegUp+RNN/HLSRNNRL/Dataset/csmith-stuff/scripts/skeleton")
-    c.generate(10)
-    print(c.list())
+    # c = Csmith(path="./test/", csmith_path="/Users/qijing.huang/Documents/LegUp+RNN/csmith/src", options="--no-structs --no-pointers --no-math64 --max-funcs 4 --no-unions", template_path="/Users/qijing.huang/Documents/LegUp+RNN/HLSRNNRL/Dataset/csmith-stuff/scripts/skeleton")
+    # c.generate(10)
+    #print(c.list())
 
     # Rawfile test
     c = Rawfile(path="./test1/", fn="test.c", src_path="./test1")
