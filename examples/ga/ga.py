@@ -2,7 +2,7 @@ from pyllvm import *
 import random
 import re
 import subprocess
-import os
+import os, fnmatch, sys
 from  subprocess import call
 
 from deap import base
@@ -10,7 +10,7 @@ from deap import creator
 from deap import tools
 from timeit import timeit
 import time
-import os.path, sys
+#import os.path, sys
 
 import get_passes
 # sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
@@ -20,11 +20,15 @@ import get_passes
 def getPollyLLVM(polyfile):
     return getLLVM(polyfile, ["-I", '../../benchmarks/polybench-c-3.2/utilities', '-include', '../../benchmarks/polybench-c-3.2/utilities/polybench.c'])
 
-def lsFiles(path="./deaptest"):
-    path = os.path.abspath(path)
-    p = re.compile("\d+.c")
-    files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)) and p.match(f)]
-    return files
+def lsFiles(directory, pattern):
+    print("Search C source in: %s"%directory)
+    pgms = []
+    for root, dirs, files in os.walk(directory):
+        for basename in files:
+            if fnmatch.fnmatch(basename, pattern):
+                filename = os.path.join(root, basename)
+                pgms.append( os.path.abspath(filename))
+    return pgms
 
 # Put Y to the pass to include in opt_passes.md
 usingopts, _ = get_passes.get_passes()
@@ -206,12 +210,20 @@ def trainGA(toolbox):
     print("Best is %s, %s" % (getcycle.getPasses(best_ind), best_ind.fitness.values))
 
 
-def main():
-    #pgms = lsFiles(path="../../benchmarks/polybench-c-3.2/linear-algebra/kernels/gemm/")
-    pgms = ['../../benchmarks/polybench-c-3.2/linear-algebra/kernels/gemm/gemm.c']
-    print (pgms)
+def main(): 
+    bm_dir = "../../benchmarks/polybench-c-3.2/"
+    categories = ["datamining", "linear-algebra", "medley", "stencils"]
+    pgms = []
+    for category in categories: 
+        pgms.extend(lsFiles(directory= os.path.join(bm_dir, category) , pattern='*.c'))
+    #pgms = lsFiles(directory="../../benchmarks/polybench-c-3.2/linear-algebra/", pattern='*.c')
 
+    for pgm in pgms:
+        print ('Found C source: %s'%pgm)
+
+    return 0
     for pgm in pgms: 
+        print ("TEST: %s"%pgm)
         # Copy to skeleton folder 
         toolbox = setupGA(pgm)
         begin = time.time()
