@@ -92,7 +92,7 @@ class Csmith(Data):
     """
 
     def __init__(self, path, csmith_path, options, template_path, \
-                 max_size = 10000, min_size = 0, timeout = 10, fn_prefix = "", *args, **kwargs):
+                 max_size = 10000, min_size = 0, timeout = 1, fn_prefix = "", *args, **kwargs):
         self.obj_name = "csmith.obj"
         self.size = 0
 
@@ -168,10 +168,16 @@ class Csmith(Data):
                 exe = os.path.join(self.path, output_fn.replace(".c", ""))
                 cmd = exe
                 try:
-                    out = subprocess.check_output(exe, shell=True, stderr= subprocess.STDOUT, timeout = self.timeout)
+                    out = subprocess.check_output(exe, shell=True, stderr= subprocess.STDOUT, timeout=self.timeout)
                 # except subprocess.CalledProcessError as e:
                 except Exception as e:
                     print("Program not terminates in %d s.\n"%(self.timeout))
+                    exception = traceback.format_exc()
+                    print(e)
+                    parent = psutil.Process(os.getpid())
+                    for child in parent.children(recursive=True):
+                      os.kill(child.pid, SIGKILL)
+                      os.kill(os.getpid(), SIGKILL)
                     continue
                 else:
                     os.remove(exe)
@@ -297,5 +303,4 @@ def test():
     c.generate()
 
 #TODO we can create object and add it to clgen db
-
-test()
+#test()

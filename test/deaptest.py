@@ -19,13 +19,13 @@ from dataset import *
 # Generate CSmith code
 def generateC():
     c = Csmith(path="./deaptest/", csmith_path="", options="--no-structs --no-pointers --no-math64 --max-funcs 4 --no-unions", template_path="/usr/local/include/csmith-2.4.0/")
-    c.generate(1)
+    c.generate(10)
     print(c.list())
 
 def lsFiles(path="./deaptest"):
     path = os.path.abspath(path)
     p = re.compile("\d+.c")
-    files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)) and p.match(f)]
+    files = [os.path.join(path,f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)) and p.match(f)]
     return files
 
 usingopts = [
@@ -37,7 +37,7 @@ usingopts = [
     'codegenprepare', 'consthoist', 'constmerge',
     'constprop', 'cost-model', 'cross-dso-cfi',
     'da', 'dce', 'deadargelim', 'delinearize',
-    'demanded-bits', 'die', 'divergence', 'domfrontier',
+    'die', 'divergence', 'domfrontier',
     'domtree', 'dse', 'early-cse', 'early-cse-memssa',
     'elim-avail-extern', 'expand-reductions', 'external-aa',
     'flattencfg', 'float2int', 'forceattrs',
@@ -56,7 +56,7 @@ usingopts = [
     'loop-unroll', 'loop-unswitch', 'loop-vectorize', 'loop-versioning',
     'loop-versioning-licm', 'loops', 'lower-expect', 'lower-guard-intrinsic',
     'loweratomic', 'lowerinvoke', 'lowerswitch', 'lowertypetests',
-    'machine-branch-prob', 'mem2reg', 'memcpyopt', 'memdep',
+    'machine-branch-prob', 'memcpyopt', 'memdep',
     'memoryssa', 'mergefunc', 'mergereturn', 'mldst-motion',
     'nary-reassociate', 'newgvn', 'opt-remark-emitter', 'pa-eval',
     'partial-inliner', 'partially-inline-libcalls',
@@ -66,7 +66,7 @@ usingopts = [
     'rpo-functionattrs', 'scalar-evolution', 'scalarize-masked-mem-intrin',
     'scalarizer', 'sccp', 'scev-aa', 'scoped-noalias', 'separate-const-offset-from-gep',
     'simple-loop-unswitch', 'simplifycfg', 'sink', 'slp-vectorizer', 'slsr',
-    'speculative-execution', 'sroa', 'strip', 'strip-dead-debug-info',
+    'sroa', 'strip', 'strip-dead-debug-info',
     'strip-dead-prototypes', 'strip-debug-declare', 'strip-gc-relocates',
     'strip-nondebug', 'strip-nonlinetable-debuginfo', 'structurizecfg',
     'tailcallelim', 'targetlibinfo', 'tbaa', 'tti', 'unreachableblockelim',
@@ -87,12 +87,12 @@ def getRealOpts():
 opts = getRealOpts()
 
 def countPasses():
-    count=len(opts)
+    count=len(usingopts)
     return count
 
 def getTime(c_code, opt_indice):
    
-    g = getLLVM(c_code)
+    g = getLLVM(c_code, "")
 
     llvm_opts = list(map((lambda x: opts[usingopts[x]]), opt_indice))
     for i, o in zip(opt_indice, llvm_opts):
@@ -130,10 +130,9 @@ def setupGA(c_code):
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
     # the goal ('fitness') function to be maximized
-    # Run Legup and recorde the negative cycles
     def evalOneMax(individual):
         cycle = getTime(c_code, individual)
-        return -cycle,
+        return cycle,
 
     #----------
     # Operator registration
