@@ -55,10 +55,14 @@ def countPasses():
 def getTime(c_code, opt_indice):
     g = getPollyLLVM(c_code)
 
-    llvm_opts = list(map((lambda x: opts[usingopts[x]]), opt_indice))
+    # If x is an available pass, look it up in opts, if not, return no_opt
+    llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
     for i, o in zip(opt_indice, llvm_opts):
-        print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " " + o.getPassName())
-        applyOpt(o, g)
+        if (o is not None):
+            print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " - " + o.getPassName())
+            applyOpt(o, g)
+        else:
+            print("applying " + str(i)+"/"+str(len(opts))+" no_opt - Does nothing")
     #print(g)
 
     ## TODO run multiple times
@@ -79,7 +83,8 @@ def setupGA(c_code):
     #                      which corresponds to integers sampled uniformly
     #                      from the range [0,1] (i.e. 0 or 1 with equal
     #                      probability)
-    toolbox.register("attr_bool", random.randint, 0, countPasses()-1)
+    #NOTE: Add no_opt as the last optimization option
+    toolbox.register("attr_bool", random.randint, 0, countPasses())
 
     # Structure initializers
     #                         define 'individual' to be an individual
@@ -221,7 +226,6 @@ def main():
     for pgm in pgms:
         print ('Found C source: %s'%pgm)
 
-    return 0
     for pgm in pgms: 
         print ("TEST: %s"%pgm)
         # Copy to skeleton folder 
