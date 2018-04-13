@@ -71,6 +71,8 @@ using namespace clang;
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 
+#include <signal.h> // sigaction(), sigsuspend(), sig*()
+#include <setjmp.h>
 #include <sys/time.h>
 
 using namespace clang;
@@ -91,13 +93,7 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename, std::vector<std::str
 
 	SmallVector<const char *, 2> Args {"clang", filename.c_str()};
     for(std::string& s: addl_args) {
-        printf("adding something %p %s\n", s.c_str(), s.c_str());
         Args.emplace_back(s.c_str());
-    }
-    printf("total:%d new:%d\n", Args.size(), addl_args.size());
-    for(auto& a: Args) {
-        printf("arg %p:\n", a);
-        printf("arg val %s:\n", a);
     }
 
 	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
@@ -218,6 +214,21 @@ bool createBinary(llvm::Module* M, std::string output) {
     return true;
 }
 
+void set_signal(int sig, void(*handle)(int)) {
+    struct sigaction setup_action;
+
+    sigset_t block_mask;
+
+    sigemptyset (&block_mask);
+    setup_action.sa_handler = handle;
+    setup_action.sa_mask = block_mask;
+    setup_action.sa_flags = SA_NODEFER;
+
+    if (sigaction(sig, &setup_action, NULL) == -1) {
+        perror("Error: cannot handle signal");
+    }
+}
+
 class AutoJIT {
 private:
   std::unique_ptr<llvm::TargetMachine> TM_;
@@ -264,6 +275,11 @@ public:
     return *res;
   }
 
+  void removeModule(ModuleHandle H) {
+    auto res = compileLayer_.removeModule(H);
+    assert(res && "Failed to remove JIT compile.");
+  }
+
   llvm::JITSymbol findSymbol(const std::string Name) {
     std::string MangledName;
     llvm::raw_string_ostream MangledNameStream(MangledName);
@@ -280,6 +296,25 @@ public:
 
 static inline unsigned long long todval (struct timeval *tp) {
     return tp->tv_sec * 1000 * 1000 + tp->tv_usec;
+}
+
+int signal_types[] = {
+                      SIGILL,
+                      SIGTRAP,
+                      SIGABRT,
+                      SIGBUS,
+                      SIGFPE,
+                      SIGSEGV,
+                      SIGSYS,
+                      SIGINT
+};
+
+jmp_buf buffer;
+
+extern "C" {
+void handler(int signal_code){
+  longjmp(buffer, signal_code);
+}
 }
 
 PYBIND11_MODULE(pyllvm, m) {
@@ -343,18 +378,40 @@ PYBIND11_MODULE(pyllvm, m) {
     .def("clone", [=](llvm::Module& lm) {
         return llvm::CloneModule(&lm);
     })
-    .def("timeFunction", [=](llvm::Module& lm, std::string fn) {
+    .def("timeFunction", [=](llvm::Module& lm, std::string fn, unsigned int repeat=1) {
       AutoJIT j;
-      j.addModule(llvm::CloneModule(&lm));
-      auto fun = (void (*)())j.getSymbolAddress(fn);
+      auto mhandle = j.addModule(llvm::CloneModule(&lm));
+
+      //This is a horrible hack, but its the best we've got rn
+      int r = setjmp(buffer);
+
+      if (r == 0) {
+        auto fun = (void (*)())j.getSymbolAddress(fn);
+        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+          set_signal(signal_types[i], handler);
+        }
+
+        struct timeval t1, t2;
+        gettimeofday(&t1,0);
+        for(int i=0; i<repeat; i++) {
+          fun();
+        }
+        gettimeofday(&t2,0);
+        unsigned long long runtime_ms = (todval(&t2)-todval(&t1))/1000;
+        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+          signal(signal_types[i], SIG_DFL);
+        }
+        j.removeModule(mhandle);
+        return runtime_ms/1000.0;
+      } else {
+        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+          signal(signal_types[i], SIG_DFL);
+        }
+        j.removeModule(mhandle);
+        return std::numeric_limits<double>::infinity();
+      }
 
 
-      struct timeval t1, t2;
-      gettimeofday(&t1,0);
-      fun();
-      gettimeofday(&t2,0);
-      unsigned long long runtime_ms = (todval(&t2)-todval(&t1))/1000;
-      return runtime_ms/1000.0;
     });
 
   py::class_<llvm::PassInfo>(m,"PassInfo")
