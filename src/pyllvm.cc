@@ -1,21 +1,43 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-//#include <clang-c/Index.h>
-#include <string>
-#include <iostream>
 
-#include <clang/Frontend/ASTConsumers.h>
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include <signal.h>
+#include <setjmp.h>
+#include <sys/time.h>
+
+
 #include <clang/Basic/Diagnostic.h>
+#include <clang/Basic/DiagnosticOptions.h>
 #include <clang/Basic/FileSystemOptions.h>
 #include <clang/CodeGen/CodeGenAction.h>
 #include <clang/CodeGen/ModuleBuilder.h>
+#include <clang/Driver/Compilation.h>
+#include <clang/Driver/Driver.h>
+#include <clang/Driver/Tool.h>
+#include <clang/Frontend/ASTConsumers.h>
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/CompilerInvocation.h>
+#include <clang/Frontend/FrontendDiagnostic.h>
+#include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Frontend/PCHContainerOperations.h>
 #include <clang/Lex/PreprocessorOptions.h>
 
-
+#include <llvm/PassInfo.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/LambdaResolver.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
@@ -24,56 +46,18 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/TargetRegistry.h>
-#include <llvm/Transforms/Utils/Cloning.h>
-#include <llvm/PassInfo.h>
-
-#include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include <llvm/ExecutionEngine/Orc/LambdaResolver.h>
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/Target/TargetMachine.h>
-
-//#include <clang/tools/libclang/CIndexer.h>
-
-namespace py = pybind11;
-using namespace clang;
-
-//===-- examples/clang-interpreter/main.cpp - Clang C Interpreter Example -===//
-//
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
-//
-//===----------------------------------------------------------------------===//
-
-#include <clang/CodeGen/CodeGenAction.h>
-#include <clang/Basic/DiagnosticOptions.h>
-#include <clang/Driver/Compilation.h>
-#include <clang/Driver/Driver.h>
-#include <clang/Driver/Tool.h>
-#include <clang/Frontend/CompilerInstance.h>
-#include <clang/Frontend/CompilerInvocation.h>
-#include <clang/Frontend/FrontendDiagnostic.h>
-#include <clang/Frontend/TextDiagnosticPrinter.h>
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/IR/Module.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/ManagedStatic.h>
 #include <llvm/Support/Path.h>
+#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
-#include <memory>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 
-#include <signal.h> // sigaction(), sigsuspend(), sig*()
-#include <setjmp.h>
-#include <sys/time.h>
+namespace py = pybind11;
+using namespace clang;
 
 using namespace clang;
 using namespace clang::driver;
@@ -153,68 +137,66 @@ std::vector<const llvm::PassInfo*> getOpts() {
 	return std::vector<const llvm::PassInfo*>(lister.passes.begin(), lister.passes.end());
 }
 
-int signal_types[] = {
-                      SIGILL,
-                      SIGTRAP,
-                      SIGABRT,
-                      SIGBUS,
-                      SIGFPE,
-                      SIGSEGV,
-                      SIGSYS,
-                      SIGINT
-};
-
-jmp_buf buffer;
-
 extern "C" {
-    void handler(int signal_code){
-      longjmp(buffer, signal_code);
+  int signal_types[] = {
+      SIGILL,
+      SIGTRAP,
+      SIGABRT,
+      SIGBUS,
+      SIGFPE,
+      SIGSEGV,
+      SIGSYS,
+      SIGINT
+  };
+
+  jmp_buf buffer;
+
+  void handler(int signal_code){
+    longjmp(buffer, signal_code);
+  }
+
+  void segfault_handler(int signal, siginfo_t *si, void *arg) {
+    assert(signal == SIGSEGV);
+    int ret = (int)(size_t)si->si_addr;
+    if (ret == 0) {
+      ret = 0xDEADBEEF;
     }
-}
+    longjmp(buffer, ret);
+  }
 
-
-void set_signal(int sig, void(*handle)(int)) {
-    struct sigaction setup_action;
+  void set_signal(int sig, void(*handle)(int)) {
+    struct sigaction sa;
 
     sigset_t block_mask;
 
     sigemptyset (&block_mask);
-    setup_action.sa_handler = handle;
-    setup_action.sa_mask = block_mask;
-    setup_action.sa_flags = SA_NODEFER;
+    sa.sa_handler = handle;
+    sa.sa_mask = block_mask;
+    sa.sa_flags = SA_NODEFER;
 
-    if (sigaction(sig, &setup_action, NULL) == -1) {
-        perror("Error: cannot handle signal");
+    if (sigaction(sig, &sa, NULL) == -1) {
+      perror("Error: cannot handle signal");
     }
-}
+  }
 
-void segfault_handler(int signal, siginfo_t *si, void *arg)
-{
-    printf("Caught segfault at address %p\n", si->si_addr);
-    longjmp(buffer, signal);         
-}
-
-void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)){
+  void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)) {
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
     sigemptyset(&sa.sa_mask);
     sa.sa_sigaction = segfault_handler;
     sa.sa_flags   = SA_SIGINFO | SA_NODEFER;
     if (sigaction(SIGSEGV, &sa, NULL) == -1) {
-        perror("Error: cannot handle signal");
+      perror("Error: cannot handle signal");
     }
+  }
 }
 
+
 bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
-
-    int *foo = NULL;
-
-    //This is a horrible hack, but its the best we've got rn
     int r = setjmp(buffer);
 
     if (r == 0) {
-        // Assume only segfault can happen when applying an optimization
-        // Other error probably shouldn't be handlered this way 
+        // Assumes only segfault can happen when applying optimization
         set_segfault_signal(segfault_handler);
 
         try{
@@ -222,14 +204,13 @@ bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
           Passes.add(pi->createPass());
           Passes.add(llvm::createVerifierPass());
           Passes.run(*M);
-          //signal(SIGSEGV, SIG_DFL);
         } catch(std::exception& e) {
-            std::cerr << "Exception catched : " << e.what() << std::endl;
+            std::cerr << "Exception caught : " << e.what() << std::endl;
             return false;
         }
         return true;
     } else {
-
+        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
         return false;
     }
 }
@@ -359,10 +340,6 @@ PYBIND11_MODULE(pyllvm, m) {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
-  //LLVMInitializeX86Target();
-  //LLVMInitializeX86TargetMC();
-  //LLVMInitializeX86AsmPrinter();
-  //LLVMInitializeX86AsmParser();
 
   // Initialize passes
   Registry = llvm::PassRegistry::getPassRegistry();
@@ -417,9 +394,9 @@ PYBIND11_MODULE(pyllvm, m) {
       AutoJIT j;
       auto mhandle = j.addModule(llvm::CloneModule(&lm));
 
-      //This is a horrible hack, but its the best we've got rn
       int r = setjmp(buffer);
 
+      double runtime = std::numeric_limits<double>::infinity();
       if (r == 0) {
         auto fun = (void (*)())j.getSymbolAddress(fn);
         for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
@@ -433,19 +410,14 @@ PYBIND11_MODULE(pyllvm, m) {
         }
         gettimeofday(&t2,0);
         unsigned long long runtime_ms = (todval(&t2)-todval(&t1))/1000;
-        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-          signal(signal_types[i], SIG_DFL);
-        }
-        j.removeModule(mhandle);
-        return runtime_ms/1000.0;
-      } else {
-        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-          signal(signal_types[i], SIG_DFL);
-        }
-        j.removeModule(mhandle);
-        return std::numeric_limits<double>::infinity();
+        runtime = runtime_ms/1000.0;
       }
 
+      for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+        signal(signal_types[i], SIG_DFL);
+      }
+      j.removeModule(mhandle);
+      return runtime;
 
     });
 
