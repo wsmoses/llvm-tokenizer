@@ -53,22 +53,31 @@ def countPasses():
     return count
 
 def getTime(c_code, opt_indice):
+    #opt_indice = [49,33,44,14,30,17,36]
     g = getPollyLLVM(c_code)
+    success = True
 
     # If x is an available pass, look it up in opts, if not, return no_opt
     llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
     for i, o in zip(opt_indice, llvm_opts):
         if (o is not None):
             print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " - " + o.getPassName())
-            applyOpt(o, g)
+            success = applyOpt(o, g)
+            if (not success):
+                print("Failed to apply opt sequence")
+                print(opt_indice)
+                break
         else:
             print("applying " + str(i)+"/"+str(len(opts))+" no_opt - Does nothing")
     #print(g)
 
-    ## TODO run multiple times
-    print("timing function")
-    time = g.timeFunction("main")
-    print("wall time: ", time) 
+    # if the pass 
+    if (success):
+        print("timing function")
+        time = g.timeFunction("main", 10)
+    else:
+        time = float('inf')
+    print("wall time: %f"%time) 
     return time
 
 def setupGA(c_code):
@@ -84,6 +93,7 @@ def setupGA(c_code):
     #                      from the range [0,1] (i.e. 0 or 1 with equal
     #                      probability)
     #NOTE: Add no_opt as the last optimization option
+    random.seed(1)
     toolbox.register("attr_bool", random.randint, 0, countPasses())
 
     # Structure initializers
@@ -91,7 +101,7 @@ def setupGA(c_code):
     #                         consisting of 100 'attr_bool' elements ('genes')
     # Number of optimization passes applied
     toolbox.register("individual", tools.initRepeat, creator.Individual,
-            toolbox.attr_bool, 10)
+            toolbox.attr_bool, 15)
 
     # define the population to be a list of individuals
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)

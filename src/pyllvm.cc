@@ -153,16 +153,85 @@ std::vector<const llvm::PassInfo*> getOpts() {
 	return std::vector<const llvm::PassInfo*>(lister.passes.begin(), lister.passes.end());
 }
 
+int signal_types[] = {
+                      SIGILL,
+                      SIGTRAP,
+                      SIGABRT,
+                      SIGBUS,
+                      SIGFPE,
+                      SIGSEGV,
+                      SIGSYS,
+                      SIGINT
+};
+
+jmp_buf buffer;
+
+extern "C" {
+    void handler(int signal_code){
+      longjmp(buffer, signal_code);
+    }
+}
+
+
+void set_signal(int sig, void(*handle)(int)) {
+    struct sigaction setup_action;
+
+    sigset_t block_mask;
+
+    sigemptyset (&block_mask);
+    setup_action.sa_handler = handle;
+    setup_action.sa_mask = block_mask;
+    setup_action.sa_flags = SA_NODEFER;
+
+    if (sigaction(sig, &setup_action, NULL) == -1) {
+        perror("Error: cannot handle signal");
+    }
+}
+
+void segfault_handler(int signal, siginfo_t *si, void *arg)
+{
+    printf("Caught segfault at address %p\n", si->si_addr);
+    longjmp(buffer, signal);         
+}
+
+void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)){
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sigemptyset(&sa.sa_mask);
+    sa.sa_sigaction = segfault_handler;
+    sa.sa_flags   = SA_SIGINFO | SA_NODEFER;
+    if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+        perror("Error: cannot handle signal");
+    }
+}
+
 bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
-  try{
-	  llvm::legacy::PassManager Passes;
-	  Passes.add(pi->createPass());
-	  Passes.add(llvm::createVerifierPass());
-	  Passes.run(*M);
-	}catch(std::exception e) {
-		return false;
-	}
-	return true;
+
+    int *foo = NULL;
+
+    //This is a horrible hack, but its the best we've got rn
+    int r = setjmp(buffer);
+
+    if (r == 0) {
+        // Assume only segfault can happen when applying an optimization
+        // Other error probably shouldn't be handlered this way 
+        set_segfault_signal(segfault_handler);
+
+        try{
+          llvm::legacy::PassManager Passes;
+          Passes.add(pi->createPass());
+          Passes.add(llvm::createVerifierPass());
+          Passes.run(*M);
+          //signal(SIGSEGV, SIG_DFL);
+        } catch(std::exception& e) {
+            std::cerr << "Exception catched : " << e.what() << std::endl;
+            return false;
+        }
+        return true;
+    } else {
+
+        return false;
+    }
 }
 
 using ListCasterBase = pybind11::detail::list_caster<std::vector<const llvm::PassInfo*>, const llvm::PassInfo*>;
@@ -214,21 +283,6 @@ bool createBinary(llvm::Module* M, std::string output) {
     return true;
 }
 
-void set_signal(int sig, void(*handle)(int)) {
-    struct sigaction setup_action;
-
-    sigset_t block_mask;
-
-    sigemptyset (&block_mask);
-    setup_action.sa_handler = handle;
-    setup_action.sa_mask = block_mask;
-    setup_action.sa_flags = SA_NODEFER;
-
-    if (sigaction(sig, &setup_action, NULL) == -1) {
-        perror("Error: cannot handle signal");
-    }
-}
-
 class AutoJIT {
 private:
   std::unique_ptr<llvm::TargetMachine> TM_;
@@ -236,7 +290,6 @@ private:
   llvm::orc::RTDyldObjectLinkingLayer objectLayer_;
   llvm::orc::IRCompileLayer<decltype(objectLayer_), llvm::orc::SimpleCompiler>
     compileLayer_;
-
 public:
   AutoJIT() :
     TM_(llvm::EngineBuilder().selectTarget()),
@@ -298,24 +351,6 @@ static inline unsigned long long todval (struct timeval *tp) {
     return tp->tv_sec * 1000 * 1000 + tp->tv_usec;
 }
 
-int signal_types[] = {
-                      SIGILL,
-                      SIGTRAP,
-                      SIGABRT,
-                      SIGBUS,
-                      SIGFPE,
-                      SIGSEGV,
-                      SIGSYS,
-                      SIGINT
-};
-
-jmp_buf buffer;
-
-extern "C" {
-void handler(int signal_code){
-  longjmp(buffer, signal_code);
-}
-}
 
 PYBIND11_MODULE(pyllvm, m) {
   Diags = new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &DiagOpts, new TextDiagnosticPrinter(llvm::errs(), &DiagOpts));
