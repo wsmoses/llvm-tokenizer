@@ -224,14 +224,29 @@ def trainGA(toolbox):
     print("Best individual is %s, %s" % (best_ind, best_ind.fitness.values))
     print("Best is %s, %s" % (getcycle.getPasses(best_ind), best_ind.fitness.values))
 
+# Cannot find the nussinov bm 
+def baseline_11_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"):
+    linear_dir = 'linear-algebra/kernels/'
+    linear_krnls = list(map(lambda x: linear_dir + x, ['2mm', '3mm', 'atax', 'doitgen', 'gemver', 'mvt', 'syr2k', 'syrk']))
+    krnls = linear_krnls + ["datamining/correlation", "stencils/jacobi-2d-imper", "/stencils/seidel-2d"]
+    krnls = list(map(lambda x: bm_dir + x, krnls))
+    pgms = []
+    for krnl in krnls: 
+        pgms.extend(lsFiles(directory= krnl, pattern='*.c'))
+    return pgms
 
-def main(): 
-    bm_dir = "../../benchmarks/polybench-c-3.2/"
+def all_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"): 
     categories = ["datamining", "linear-algebra", "medley", "stencils"]
     pgms = []
     for category in categories: 
         pgms.extend(lsFiles(directory= os.path.join(bm_dir, category) , pattern='*.c'))
-    #pgms = lsFiles(directory="../../benchmarks/polybench-c-3.2/linear-algebra/", pattern='*.c')
+    return pgms
+ 
+ 
+def main(): 
+    bm_dir = "../../benchmarks/polybench-c-3.2/"
+    
+    pgms = baseline_11_polybenmarks(bm_dir)
 
     for pgm in pgms:
         print ('Found C source: %s'%pgm)
