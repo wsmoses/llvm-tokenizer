@@ -16,9 +16,13 @@ import get_passes
 # sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 # from dataset import *
 
+# Polybench dataset options:  MINI_DATASET, SMALL_DATASET, STANDARD_DATASET, LARGE_DATASET,  EXTRALARGE_DATASET
+DATASET_OPTION = '-DSMALL_DATASET' 
+DATASET_OPTION = ''
+
 # Generate getPollyLLVM code
 def getPollyLLVM(polyfile):
-    return getLLVM(polyfile, ["-I", '../../benchmarks/polybench-c-3.2/utilities', '-include', '../../benchmarks/polybench-c-3.2/utilities/polybench.c'])
+    return getLLVM(polyfile, ["-I", '../../benchmarks/polybench-c-3.2/utilities', '-include', '../../benchmarks/polybench-c-3.2/utilities/polybench.c', DATASET_OPTION])
 
 def lsFiles(directory, pattern):
     print("Search C source in: %s"%directory)
@@ -245,7 +249,6 @@ def all_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"):
  
 def main(): 
     bm_dir = "../../benchmarks/polybench-c-3.2/"
-    
     pgms = baseline_11_polybenmarks(bm_dir)
 
     for pgm in pgms:
