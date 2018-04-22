@@ -1,3 +1,5 @@
+Pass  | Description | Include? | Note
+--- | --- | --- | ---
 `aa` | Function Alias Analysis Results | |Analysis 
 `aa-eval` | Exhaustive Alias Analysis Precision Evaluator | | 
 `aarch64-a57-fp-load-balancing` | AArch64 A57 FP Load-Balancing | | 
@@ -17,7 +19,7 @@
 `adce` | Aggressive Dead Code Elimination |Y | 
 `add-discriminators` | Add DWARF path discriminators | | 
 `alignment-from-assumptions` | Alignment from assumptions |Y | 
-`alloca-hoisting` | Hoisting alloca instructions in non-entry blocks to the entry block |Y | 
+`alloca-hoisting` | Hoisting alloca instructions in non-entry blocks to the entry block |N | 
 `always-inline` | Inliner for always_inline functions |Y | 
 `amdgpu-aa` | AMDGPU Address space based Alias Analysis | |Analysis 
 `amdgpu-always-inline` | AMDGPU Inline All Functions | | 
@@ -34,7 +36,7 @@
 `amdgpu-unify-divergent-exit-nodes` | Unify divergent function exit nodes | | 
 `amdgpu-unify-metadata` | Unify multiple OpenCL metadata due to linking | | 
 `amdgpu-usenative` | Replace builtin math calls with that native versions. | | 
-`amode-opt` | Optimize addressing mode |Y | How?
+`amode-opt` | Optimize addressing mode |N | How?
 `argpromotion` | Promote 'by reference' arguments to scalars |Y | 
 `arm-cp-islands` | ARM constant island placement and branch shortening pass | | 
 `arm-execution-deps-fix` | ARM Execution Dependency Fix | | 
@@ -54,7 +56,7 @@
 `bounds-checking` | Run-time bounds checking | | 
 `branch-prob` | Branch Probability Analysis | |Analysis 
 `break-crit-edges` | Break critical edges in CFG | |Break all of the critical edges in the CFG by inserting a dummy basic block 
-`called-value-propagation` | Called Value Propagation |Y | 
+`called-value-propagation` | Called Value Propagation |N | 
 `callsite-splitting` | Call-site splitting | | 
 `cfl-anders-aa` | Inclusion-Based CFL Alias Analysis | |Analysis 
 `cfl-steens-aa` | Unification-Based CFL Alias Analysis | |Analysis 
@@ -77,7 +79,7 @@
 `demanded-bits` | Demanded bits analysis | |Analysis 
 `dfsan` | DataFlowSanitizer: dynamic data flow analysis. | |Analysis 
 `die` | Dead Instruction Elimination |Y | 
-`div-rem-pairs` | Hoist/decompose integer division and remainder |Y | 
+`div-rem-pairs` | Hoist/decompose integer division and remainder |N | 
 `divergence` | Divergence Analysis | |Analysis 
 `domfrontier` | Dominance Frontier Construction | |Analysis 
 `domtree` | Dominator Tree Construction | |Analysis 
@@ -200,7 +202,7 @@
 `memdep` | Memory Dependence Analysis | | 
 `memoryssa` | Memory SSA | | 
 `mergefunc` | Merge Functions | | 
-`mergeicmps` | Merge contiguous icmps into a memcmp |Y | 
+`mergeicmps` | Merge contiguous icmps into a memcmp |N | 
 `mergereturn` | Unify function exit nodes | | 
 `metarenamer` | Assign new names to everything | | 
 `mldst-motion` | MergedLoadStoreMotion | | 

@@ -1,4 +1,4 @@
-import os
+import os, fnmatch, sys
 import logging
 import numpy as np
 import multiprocessing as mp
@@ -9,11 +9,11 @@ import a3c
 #import load_trace
 #import pyllvm
 
-#from pyllvm import *
-from get_passes import get_passes
+from pyllvm import *
+import get_passes
 
 NUM_PASSES=30
-passes, NUM_OPTIONS = get_passes('opt_passes.md') 
+usingopts, NUM_OPTIONS = get_passes.get_passes('opt_passes.md') 
 A_DIM = NUM_OPTIONS
 
 S_INFO = NUM_OPTIONS * NUM_PASSES# One-hot encoding for the passes 
@@ -41,22 +41,67 @@ TRAIN_TRACES = './cooked_traces/'
 # NN_MODEL = './results/pretrain_linear_reward.ckpt'
 NN_MODEL = None
 
-#def getRealOpts():
-#    opts = pyllvm.getOpts()
-#    omap = {o.getPassArgument():o for o in opts}
-#    opts = {a:omap[a] for a in usingopts} # if not omap[a].isAnalysis()}
-#
-#    #for o in opts:
-#    #    if o.isAnalysis():
-#    #        print(o.getPassArgument(), o.getPassName())
-#    return opts
+# Polybench dataset options:  MINI_DATASET, SMALL_DATASET, STANDARD_DATASET, LARGE_DATASET,  EXTRALARGE_DATASET
+DATASET_OPTION = '-DSMALL_DATASET' 
+
+# Generate getPollyLLVM code
+def getPollyLLVM(polyfile):
+    return getLLVM(polyfile, ["-I", '../../benchmarks/polybench-c-3.2/utilities', '-include', '../../benchmarks/polybench-c-3.2/utilities/polybench.c', DATASET_OPTION])
+
+def lsFiles(directory, pattern):
+    print("Search C source in: %s"%directory)
+    pgms = []
+    for root, dirs, files in os.walk(directory):
+        for basename in files:
+            if fnmatch.fnmatch(basename, pattern):
+                filename = os.path.join(root, basename)
+                pgms.append( os.path.abspath(filename))
+    return pgms
 
 
-# TODO 
-def time_pgm(passes):
-    print("Applied Passes: %s\n"%passes)
-    return 1
+def getRealOpts():
+    opts = getOpts()
+    omap = {o.getPassArgument():o for o in opts}
+    opts = {a:omap[a] for a in usingopts} # if not omap[a].isAnalysis()}
 
+    #for o in opts:
+    #    if o.isAnalysis():
+    #        print(o.getPassArgument(), o.getPassName())
+    return opts
+
+opts = getRealOpts()
+
+def countPasses():
+    count=len(opts)
+    return count
+
+def getTime(c_code, opt_indice):
+    #opt_indice = [49,33,44,14,30,17,36]
+    g = getPollyLLVM(c_code)
+    success = True
+
+    # If x is an available pass, look it up in opts, if not, return no_opt
+    llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
+    for i, o in zip(opt_indice, llvm_opts):
+        if (o is not None):
+            print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " - " + o.getPassName())
+            success = applyOpt(o, g)
+            if (not success):
+                print("Failed to apply opt sequence")
+                print(opt_indice)
+                break
+        else:
+            print("applying " + str(i)+"/"+str(len(opts))+" no_opt - Does nothing")
+    #print(g)
+
+    # if the pass 
+    if (success):
+        print("timing function")
+        time = g.timeFunction("main", 10)
+    else:
+        time = float('inf')
+    print("wall time: %f"%time) 
+    return time
 
 def testing(epoch, nn_model, log_file):
     # clean up the test results folder
@@ -89,13 +134,13 @@ def testing(epoch, nn_model, log_file):
     rewards_95per = np.percentile(rewards, 95)
     rewards_max = np.max(rewards)
 
-    log_file.write(str(epoch) + '\t' +
-                   str(rewards_min) + '\t' +
-                   str(rewards_5per) + '\t' +
-                   str(rewards_mean) + '\t' +
-                   str(rewards_median) + '\t' +
-                   str(rewards_95per) + '\t' +
-                   str(rewards_max) + '\n')
+    log_file.write(str(epoch).encode()+ b'\t' +
+                   str(rewards_min).encode()+ b'\t' +
+                   str(rewards_5per).encode()+ b'\t' +
+                   str(rewards_mean).encode()+ b'\t' +
+                   str(rewards_median).encode()+ b'\t' +
+                   str(rewards_95per).encode()+ b'\t' +
+                   str(rewards_max).encode()+ b'\n')
     log_file.flush()
 
 
@@ -136,7 +181,7 @@ def central_agent(net_params_queues, exp_queues):
             # synchronize the network parameters of work agent
             actor_net_params = actor.get_network_params()
             critic_net_params = critic.get_network_params()
-            for i in xrange(NUM_AGENTS):
+            for i in range(NUM_AGENTS):
                 net_params_queues[i].put([actor_net_params, critic_net_params])
                 # Note: this is synchronous version of the parallel training,
                 # which is easier to understand and probe. The framework can be
@@ -158,7 +203,7 @@ def central_agent(net_params_queues, exp_queues):
             actor_gradient_batch = []
             critic_gradient_batch = []
 
-            for i in xrange(NUM_AGENTS):
+            for i in range(NUM_AGENTS):
                 s_batch, a_batch, r_batch, terminal, info = exp_queues[i].get()
 
                 actor_gradient, critic_gradient, td_batch = \
@@ -182,13 +227,13 @@ def central_agent(net_params_queues, exp_queues):
             assert len(actor_gradient_batch) == len(critic_gradient_batch)
             # assembled_actor_gradient = actor_gradient_batch[0]
             # assembled_critic_gradient = critic_gradient_batch[0]
-            # for i in xrange(len(actor_gradient_batch) - 1):
-            #     for j in xrange(len(assembled_actor_gradient)):
+            # for i in range(len(actor_gradient_batch) - 1):
+            #     for j in range(len(assembled_actor_gradient)):
             #             assembled_actor_gradient[j] += actor_gradient_batch[i][j]
             #             assembled_critic_gradient[j] += critic_gradient_batch[i][j]
             # actor.apply_gradients(assembled_actor_gradient)
             # critic.apply_gradients(assembled_critic_gradient)
-            for i in xrange(len(actor_gradient_batch)):
+            for i in range(len(actor_gradient_batch)):
                 actor.apply_gradients(actor_gradient_batch[i])
                 critic.apply_gradients(critic_gradient_batch[i])
 
@@ -223,7 +268,7 @@ def central_agent(net_params_queues, exp_queues):
 
 
 #def agent(agent_id, all_cooked_time, all_cooked_bw, net_params_queue, exp_queue):
-def agent(agent_id, net_params_queue, exp_queue):
+def agent(agent_id, net_params_queue, exp_queue, pgm):
 
     #net_env = env.Environment(all_cooked_time=all_cooked_time,
     #                          all_cooked_bw=all_cooked_bw,
@@ -296,7 +341,7 @@ def agent(agent_id, net_params_queue, exp_queue):
             cur_passes = np.argmax(cur_state, axis=1) 
             print("cur_state: ", cur_state)
             print("cur_passes: ", cur_passes)
-            reward = time_pgm(cur_passes);
+            reward = getTime(pgm, cur_passes)
 
 
             # -- linear reward --
@@ -356,7 +401,7 @@ def agent(agent_id, net_params_queue, exp_queue):
             #               str(delay) + '\t' +
             #               str(reward) + '\n')
             log_file.write(
-                        str(reward) + '\n')
+                        str(reward).encode() + b'\n')
             log_file.flush()
 
             # report experience to the coordinator
@@ -377,7 +422,7 @@ def agent(agent_id, net_params_queue, exp_queue):
                 del r_batch[:]
                 del entropy_record[:]
 
-                log_file.write('\n')  # so that in the log we know where video ends
+                log_file.write(b'\n')  # so that in the log we know where video ends
 
             # store the state and action into batches
             if end_of_opt:
@@ -402,8 +447,34 @@ def agent(agent_id, net_params_queue, exp_queue):
 
             it = it + 1
 
+# Cannot find the nussinov bm 
+def baseline_11_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"):
+    linear_dir = 'linear-algebra/kernels/'
+    linear_krnls = list(map(lambda x: linear_dir + x, ['2mm', '3mm', 'atax', 'doitgen', 'gemver', 'mvt', 'syr2k', 'syrk']))
+    krnls = linear_krnls + ["datamining/correlation", "stencils/jacobi-2d-imper", "/stencils/seidel-2d"]
+    krnls = list(map(lambda x: bm_dir + x, krnls))
+    pgms = []
+    for krnl in krnls: 
+        pgms.extend(lsFiles(directory= krnl, pattern='*.c'))
+    return pgms
 
+def all_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"): 
+    categories = ["datamining", "linear-algebra", "medley", "stencils"]
+    pgms = []
+    for category in categories: 
+        pgms.extend(lsFiles(directory= os.path.join(bm_dir, category) , pattern='*.c'))
+    return pgms
+ 
 def main():
+
+    bm_dir = "../../benchmarks/polybench-c-3.2/"
+    pgms = baseline_11_polybenmarks(bm_dir)
+
+    for pgm in pgms:
+        print ('Found C source: %s'%pgm)
+
+    #for pgm in pgms: 
+    pgm = pgms[0]
 
     np.random.seed(RANDOM_SEED)
     #assert len(VIDEO_BIT_RATE) == A_DIM
@@ -415,7 +486,7 @@ def main():
     # inter-process communication queues
     net_params_queues = []
     exp_queues = []
-    for i in xrange(NUM_AGENTS):
+    for i in range(NUM_AGENTS):
         net_params_queues.append(mp.Queue(1))
         exp_queues.append(mp.Queue(1))
 
@@ -427,13 +498,13 @@ def main():
 
     #all_cooked_time, all_cooked_bw, _ = load_trace.load_trace(TRAIN_TRACES)
     agents = []
-    for i in xrange(NUM_AGENTS):
+    for i in range(NUM_AGENTS):
         #agents.append(mp.Process(target=agent,
         #                         args=(i, all_cooked_time, all_cooked_bw,
         #                               net_params_queues[i],
         #                               exp_queues[i])))
-        agents.append(mp.Process(target=agent, args=(i, net_params_queues[i], exp_queues[i])))
-    for i in xrange(NUM_AGENTS):
+        agents.append(mp.Process(target=agent, args=(i, net_params_queues[i], exp_queues[i], pgm)))
+    for i in range(NUM_AGENTS):
         agents[i].start()
 
     # wait unit training is done
