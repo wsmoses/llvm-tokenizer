@@ -6,11 +6,12 @@ import tensorflow as tf
 import load_trace
 import a3c
 #import fixed_env as env
-from get_passes import get_passes
+import get_passes
+from get_passes import NUM_OPTIONS
+import load_pgm
 
 
 NUM_PASSES=30
-passes, NUM_OPTIONS = get_passes('opt_passes.md') 
 A_DIM = NUM_OPTIONS
 
 S_INFO = NUM_OPTIONS * NUM_PASSES# One-hot encoding for the passes 
@@ -43,6 +44,8 @@ def main():
     #                          all_cooked_bw=all_cooked_bw)
 
     #log_path = LOG_FILE + '_' + all_file_names[net_env.trace_idx]
+    pgm = load_pgm.load_pgm() 
+    pgm = pgm[0:2]
     log_path = LOG_FILE
     log_file = open(log_path, 'wb')
 
@@ -77,7 +80,7 @@ def main():
         r_batch = []
         entropy_record = []
 
-        video_count = 0
+        pgm_count = 0
 
         it = 0
         while True:  # serve video forever
@@ -98,9 +101,9 @@ def main():
            #          - SMOOTH_PENALTY * np.abs(VIDEO_BIT_RATE[selected_pass] -
            #                                    VIDEO_BIT_RATE[last_selected_pass]) / M_IN_K
 
-            last_selected_pass = selected_pass
 
             # log time_stamp, selected_pass, buffer_size, reward
+            action_index = selected_pass
            # log_file.write(str(time_stamp / M_IN_K) + '\t' +
            #                str(VIDEO_BIT_RATE[selected_pass]) + '\t' +
            #                str(buffer_size) + '\t' +
@@ -108,11 +111,6 @@ def main():
            #                str(video_chunk_size) + '\t' +
            #                str(delay) + '\t' +
            #                str(reward) + '\n')
-            log_file.write(
-                        str(reward) + '\n')
- 
-            log_file.flush()
-
             # retrieve previous state
             if len(s_batch) == 0:
                 state = [np.zeros((S_INFO, S_LEN))]
@@ -135,10 +133,15 @@ def main():
             cur_passes = np.argmax(cur_state, axis=1) 
             print("cur_state: ", cur_state)
             print("cur_passes: ", cur_passes)
-            reward = time_pgm(cur_passes);
+            reward = get_passes.getTime(pgm[pgm_count], cur_passes)
+            log_file.write(
+                        str(reward).encode() + b'\n')
+ 
+            log_file.flush()
 
             # dequeue history record
             state = np.roll(state, -1, axis=1)
+            last_selected_pass = selected_pass
 
             action_prob = actor.predict(np.reshape(state, (1, S_INFO, S_LEN)))
             action_cumsum = np.cumsum(action_prob)
@@ -150,8 +153,8 @@ def main():
 
             entropy_record.append(a3c.compute_entropy(action_prob[0]))
 
-            if end_of_video:
-                log_file.write('\n')
+            if end_of_opt:
+                log_file.write(b'\n')
                 log_file.close()
 
                 last_selected_pass = DEFAULT_QUALITY
@@ -168,12 +171,14 @@ def main():
                 a_batch.append(action_vec)
                 entropy_record = []
 
-                video_count += 1
+                pgm_count += 1
+                it = 0
 
-                if video_count >= len(all_file_names):
+                if pgm_count >= len(pgm):
                     break
 
-                log_path = LOG_FILE + '_' + all_file_names[net_env.trace_idx]
+                #log_path = LOG_FILE + '_' + all_file_names[net_env.trace_idx]
+                log_path = LOG_FILE + '_' + str(pgm_count)
                 log_file = open(log_path, 'wb')
 
             it = it + 1

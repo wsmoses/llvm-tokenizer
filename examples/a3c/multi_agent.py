@@ -9,11 +9,11 @@ import a3c
 #import load_trace
 #import pyllvm
 
-from pyllvm import *
 import get_passes
+from get_passes import NUM_OPTIONS
+import load_pgm
 
 NUM_PASSES=30
-usingopts, NUM_OPTIONS = get_passes.get_passes('opt_passes.md') 
 A_DIM = NUM_OPTIONS
 
 S_INFO = NUM_OPTIONS * NUM_PASSES# One-hot encoding for the passes 
@@ -40,68 +40,6 @@ TEST_LOG_FOLDER = './test_results/'
 TRAIN_TRACES = './cooked_traces/'
 # NN_MODEL = './results/pretrain_linear_reward.ckpt'
 NN_MODEL = None
-
-# Polybench dataset options:  MINI_DATASET, SMALL_DATASET, STANDARD_DATASET, LARGE_DATASET,  EXTRALARGE_DATASET
-DATASET_OPTION = '-DSMALL_DATASET' 
-
-# Generate getPollyLLVM code
-def getPollyLLVM(polyfile):
-    return getLLVM(polyfile, ["-I", '../../benchmarks/polybench-c-3.2/utilities', '-include', '../../benchmarks/polybench-c-3.2/utilities/polybench.c', DATASET_OPTION])
-
-def lsFiles(directory, pattern):
-    print("Search C source in: %s"%directory)
-    pgms = []
-    for root, dirs, files in os.walk(directory):
-        for basename in files:
-            if fnmatch.fnmatch(basename, pattern):
-                filename = os.path.join(root, basename)
-                pgms.append( os.path.abspath(filename))
-    return pgms
-
-
-def getRealOpts():
-    opts = getOpts()
-    omap = {o.getPassArgument():o for o in opts}
-    opts = {a:omap[a] for a in usingopts} # if not omap[a].isAnalysis()}
-
-    #for o in opts:
-    #    if o.isAnalysis():
-    #        print(o.getPassArgument(), o.getPassName())
-    return opts
-
-opts = getRealOpts()
-
-def countPasses():
-    count=len(opts)
-    return count
-
-def getTime(c_code, opt_indice):
-    #opt_indice = [49,33,44,14,30,17,36]
-    g = getPollyLLVM(c_code)
-    success = True
-
-    # If x is an available pass, look it up in opts, if not, return no_opt
-    llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
-    for i, o in zip(opt_indice, llvm_opts):
-        if (o is not None):
-            print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " - " + o.getPassName())
-            success = applyOpt(o, g)
-            if (not success):
-                print("Failed to apply opt sequence")
-                print(opt_indice)
-                break
-        else:
-            print("applying " + str(i)+"/"+str(len(opts))+" no_opt - Does nothing")
-    #print(g)
-
-    # if the pass 
-    if (success):
-        print("timing function")
-        time = g.timeFunction("main", 10)
-    else:
-        time = float('inf')
-    print("wall time: %f"%time) 
-    return time
 
 def testing(epoch, nn_model, log_file):
     # clean up the test results folder
@@ -341,7 +279,7 @@ def agent(agent_id, net_params_queue, exp_queue, pgm):
             cur_passes = np.argmax(cur_state, axis=1) 
             print("cur_state: ", cur_state)
             print("cur_passes: ", cur_passes)
-            reward = getTime(pgm, cur_passes)
+            reward = get_passes.getTime(pgm, cur_passes)
 
 
             # -- linear reward --
@@ -412,7 +350,7 @@ def agent(agent_id, net_params_queue, exp_queue, pgm):
                                end_of_opt,
                                {'entropy': entropy_record}])
 
-                # synchronize the network parameters from the coordinator
+                # synchronize the  etwork parameters from the coordinator
                 actor_net_params, critic_net_params = net_params_queue.get()
                 actor.set_network_params(actor_net_params)
                 critic.set_network_params(critic_net_params)
@@ -447,34 +385,11 @@ def agent(agent_id, net_params_queue, exp_queue, pgm):
 
             it = it + 1
 
-# Cannot find the nussinov bm 
-def baseline_11_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"):
-    linear_dir = 'linear-algebra/kernels/'
-    linear_krnls = list(map(lambda x: linear_dir + x, ['2mm', '3mm', 'atax', 'doitgen', 'gemver', 'mvt', 'syr2k', 'syrk']))
-    krnls = linear_krnls + ["datamining/correlation", "stencils/jacobi-2d-imper", "/stencils/seidel-2d"]
-    krnls = list(map(lambda x: bm_dir + x, krnls))
-    pgms = []
-    for krnl in krnls: 
-        pgms.extend(lsFiles(directory= krnl, pattern='*.c'))
-    return pgms
 
-def all_polybenmarks(bm_dir = "../../benchmarks/polybench-c-3.2/"): 
-    categories = ["datamining", "linear-algebra", "medley", "stencils"]
-    pgms = []
-    for category in categories: 
-        pgms.extend(lsFiles(directory= os.path.join(bm_dir, category) , pattern='*.c'))
-    return pgms
- 
 def main():
 
-    bm_dir = "../../benchmarks/polybench-c-3.2/"
-    pgms = baseline_11_polybenmarks(bm_dir)
-
-    for pgm in pgms:
-        print ('Found C source: %s'%pgm)
-
     #for pgm in pgms: 
-    pgm = pgms[0]
+    pgm = load_pgm.load_pgm()[0] 
 
     np.random.seed(RANDOM_SEED)
     #assert len(VIDEO_BIT_RATE) == A_DIM
