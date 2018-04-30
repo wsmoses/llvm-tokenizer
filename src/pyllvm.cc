@@ -54,6 +54,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
 namespace py = pybind11;
@@ -191,6 +192,40 @@ extern "C" {
   }
 }
 
+bool applyOptLevel(llvm::Module* M, int level) {
+    int r = setjmp(buffer);
+
+    if (r == 0) {
+        // Assumes only segfault can happen when applying optimization
+        set_segfault_signal(segfault_handler);
+        try{
+          llvm::PassManagerBuilder pmb;
+          pmb.OptLevel = level;
+
+          llvm::legacy::PassManager Passes;
+          std::unique_ptr<llvm::legacy::FunctionPassManager> FPasses;
+
+          pmb.populateModulePassManager(Passes);
+          pmb.populateFunctionPassManager(*FPasses);
+
+          Passes.add(llvm::createVerifierPass());
+          FPasses->doInitialization();
+          for (llvm::Function &F : *M)
+            FPasses->run(F);
+          FPasses->doFinalization();
+
+          Passes.run(*M);
+          Passes.add(llvm::createVerifierPass());
+        } catch(std::exception& e) {
+            std::cerr << "Exception caught : " << e.what() << std::endl;
+            return false;
+        }
+        return true;
+    } else {
+        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
+        return false;
+    }
+}
 
 bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
     int r = setjmp(buffer);
@@ -440,6 +475,7 @@ PYBIND11_MODULE(pyllvm, m) {
   m.def("getLLVM", getLLVM);
   m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
   m.def("applyOpt", applyOpt);
+  m.def("applyOptLevel", applyOptLevel);
   m.def("createBinary", createBinary);
 
 }
