@@ -41,7 +41,7 @@ def setupGA(c_code):
     #                         consisting of 100 'attr_bool' elements ('genes')
     # Number of optimization passes applied
     toolbox.register("individual", tools.initRepeat, creator.Individual,
-            toolbox.attr_bool, 15)
+            toolbox.attr_bool, 60)
 
     # define the population to be a list of individuals
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
@@ -70,7 +70,7 @@ def setupGA(c_code):
     # is replaced by the 'fittest' (best) of three individuals
     # drawn randomly from the current generation.
     # Pick top 3
-    toolbox.register("select", tools.selTournament, tournsize=5)
+    toolbox.register("select", tools.selTournament, tournsize=3)
     return toolbox
 #----------
 
@@ -79,7 +79,7 @@ def trainGA(toolbox):
 
     # create an initial population of 300 individuals (where
     # each individual is a list of integers)
-    pop = toolbox.population(n=10)
+    pop = toolbox.population(n=300)
 
     # CXPB  is the probability with which two individuals
     #       are crossed
@@ -100,7 +100,7 @@ def trainGA(toolbox):
     # Extracting all the fitnesses of
     fits = [ind.fitness.values[0] for ind in pop]
 
-    # Variable keeping track of the number of generations
+    # Variable keeping track of tDSMALL_DATASEThe number of generations
     g = 0
 
     # Begin the evolution
@@ -184,7 +184,7 @@ def trainGA(toolbox):
 def main(): 
     bm_dir = "../../benchmarks/polybench-c-3.2/"
     pgms = get_passes.baseline_11_polybenmarks(bm_dir)
-    pgms = pgms[0:1]
+    #pgms = pgms[3:]
 
     for pgm in pgms:
         print ('Found C source: %s'%pgm)

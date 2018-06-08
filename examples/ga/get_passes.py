@@ -61,6 +61,7 @@ def getTime(c_code, opt_indice):
     #opt_indice = [49,33,44,14,30,17,36]
     g = getPollyLLVM(c_code)
     success = True
+    time = float('inf')
 
     # If x is an available pass, look it up in opts, if not, return no_opt
     llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
@@ -82,7 +83,10 @@ def getTime(c_code, opt_indice):
         print("timing function")
         time = g.timeFunction("main", count )
         time = float(time)
-        print("wall time: %f"%time) 
+    if time == float('inf'):
+        time = 1000000.0 * count
+
+    print("wall time: %f"%time) 
     return time
 
 
