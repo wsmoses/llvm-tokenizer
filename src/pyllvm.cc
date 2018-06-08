@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include <unistd.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <sys/time.h>
@@ -151,8 +152,10 @@ extern "C" {
   };
 
   jmp_buf buffer;
+  static char stack[SIGSTKSZ];
 
   void handler(int signal_code){
+     
     longjmp(buffer, signal_code);
   }
 
@@ -181,11 +184,18 @@ extern "C" {
   }
 
   void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)) {
+  stack_t ss;
+  ss.ss_size = SIGSTKSZ;
+  ss.ss_sp = stack;
+
+
     struct sigaction sa;
+
     memset(&sa, 0, sizeof(struct sigaction));
     sigemptyset(&sa.sa_mask);
+    sigaltstack(&ss, 0);
     sa.sa_sigaction = segfault_handler;
-    sa.sa_flags   = SA_SIGINFO | SA_NODEFER;
+    sa.sa_flags   = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
     if (sigaction(SIGSEGV, &sa, NULL) == -1) {
       perror("Error: cannot handle signal");
     }
@@ -243,6 +253,7 @@ bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
             std::cerr << "Exception caught : " << e.what() << std::endl;
             return false;
         }
+
         return true;
     } else {
         std::cerr << "Caught segfault at address " << (void*)r << std::endl;
