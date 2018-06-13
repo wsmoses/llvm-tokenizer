@@ -15,4 +15,4 @@ for p in $PACKAGES; do
 done
 
 PYTHON=${PYTHON:="python"}
-${PYTHON} -m pip install . --upgrade --verbose 
+${PYTHON} -m pip install . --upgrade --verbose --no-clean 

@@ -87,10 +87,36 @@ std::unique_ptr<llvm::Module> getLLVM(std::string filename, std::vector<std::str
 	return nullptr;
 
 	const driver::JobList &Jobs = C->getJobs();
-	assert(Jobs.size() == 1 && isa<driver::Command>(*Jobs.begin()));
 
-	const driver::Command &Cmd = cast<driver::Command>(*Jobs.begin());
-	assert(llvm::StringRef(Cmd.getCreator().getName()) == "clang");
+    if (true) {
+        printf("Jobs.size() ==  %d\n", Jobs.size());
+        for(auto a: Jobs) {
+            auto b = dyn_cast_or_null<driver::Command>(&a);
+            if (b == nullptr) {
+                printf("nullptr\n");
+            } else {
+                printf("%s\n", b->getCreator().getName());
+            }
+        }
+    }
+
+    if (Jobs.size() == 0) {
+        printf("no valid job\n");
+        return nullptr;
+    }
+	
+    const driver::Command &Cmd = cast<driver::Command>(*Jobs.begin());
+	
+    assert(llvm::StringRef(Cmd.getCreator().getName()) == "clang");
+    
+    if (Jobs.size() > 1) {
+        if (Jobs.size() != 2) {
+            printf("too many jobs\n");
+            return nullptr;
+        }
+        const driver::Command &Cmd2 = cast<driver::Command>(*(++Jobs.begin()));
+        assert(llvm::StringRef(Cmd2.getCreator().getName()) == "GNU::Linker");
+    }
 
 	// Initialize a compiler invocation object from the clang (-cc1) arguments.
 	const driver::ArgStringList &CCArgs = Cmd.getArguments();
