@@ -47,6 +47,14 @@ endforeach()
 
 message(STATUS "finding llvm libs: " ${trimmedlist})
 
+add_executable (pyllvm_test src/pyllvm_test)
+target_link_libraries(pyllvm_test
+    PRIVATE
+    "-Wl,--start-group"
+    ${trimmedlist}
+    "-Wl,--end-group"
+)
+
 target_link_libraries(pyllvm
     PRIVATE
     "-Wl,--start-group"

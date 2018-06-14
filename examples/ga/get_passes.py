@@ -60,29 +60,11 @@ def countPasses():
 def getTime(c_code, opt_indice):
     #opt_indice = [49,33,44,14,30,17,36]
     g = getPollyLLVM(c_code)
-    success = True
-    time = float('inf')
 
-    # If x is an available pass, look it up in opts, if not, return no_opt
-    llvm_opts = list(map((lambda x: opts[usingopts[x]] if x < len(opts) else None), opt_indice))
-    for i, o in zip(opt_indice, llvm_opts):
-        if (o is not None):
-            print("applying " + str(i)+"/"+str(len(opts)) + " " + o.getPassArgument() + " - " + o.getPassName())
-            success = applyOpt(o, g)
-            if (not success):
-                print("Failed to apply opt sequence")
-                print(opt_indice)
-                break
-        else:
-            print("applying " + str(i)+"/"+str(len(opts))+" no_opt - Does nothing")
-    #print(g)
-
-    # if the pass 
     count = 10
-    if (success):
-        print("timing function")
-        time = g.timeFunction("main", count )
-        time = float(time)
+    print("timing function")
+    time = g.timeFunction("main", count )
+    time = float(time)
     if time == float('inf'):
         time = 1000000.0 * count
 
