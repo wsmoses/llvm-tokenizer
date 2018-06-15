@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <cstring>
 
 #include <unistd.h>
 #include <signal.h>
@@ -67,70 +68,113 @@ using namespace clang;
 using namespace clang;
 using namespace clang::driver;
 
-llvm::LLVMContext llvmContext;
+std::map<const llvm::Module*, llvm::LLVMContext*> contexts;
 DiagnosticOptions DiagOpts;
 DiagnosticsEngine* Diags;
 
-std::unique_ptr<llvm::Module> getLLVM(std::string filename, std::vector<std::string> addl_args) {
-	std::unique_ptr<llvm::Module> mod;
-	EmitLLVMOnlyAction Act(&llvmContext);
+std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vector<std::string> addl_args) {
+	
+    llvm::LLVMContext* context = new llvm::LLVMContext();
 
-  std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
+    {
+    EmitLLVMOnlyAction Act(context);
 
-	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
+    std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
 
-	SmallVector<const char *, 2> Args {"clang", filename.c_str()};
+    Diags->Reset();
+	  Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
 
-  for(std::string& s: addl_args) {
-      Args.emplace_back(s.c_str());
-  }
+	  SmallVector<const char *, 2> Args {"clang", filename.c_str()};
 
-	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
+    for(const std::string s: addl_args) {
+        char* ns = new char[s.length()+1];
+        strcpy(ns, s.c_str());
+        Args.emplace_back(ns);
+    }
 
-  if (!C) return nullptr;
+	  std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
 
-	const driver::JobList &Jobs = C->getJobs();
+    if (!C) {
+        for(int i=2; i<Args.size(); i++) {
+            delete[] Args[i];
+        }
+        goto error;
+    }
 
-  if (Jobs.size() == 0) {
-      printf("no valid job\n");
-      return nullptr;
-  }
+	  const driver::JobList &Jobs = C->getJobs();
 
-  const driver::Command &Cmd = cast<driver::Command>(*Jobs.begin());
+    if (Jobs.size() == 0) {
+        printf("no valid job\n");
+        for(int i=2; i<Args.size(); i++) {
+            delete[] Args[i];
+        }
+        goto error;
+    }
 
-  assert(llvm::StringRef(Cmd.getCreator().getName()) == "clang");
+    const driver::Command &Cmd = cast<driver::Command>(*Jobs.begin());
 
-  if (Jobs.size() > 1) {
-      if (Jobs.size() != 2) {
-          printf("too many jobs\n");
-          return nullptr;
-      }
-      const driver::Command &Cmd2 = cast<driver::Command>(*(++Jobs.begin()));
-      assert(llvm::StringRef(Cmd2.getCreator().getName()) == "GNU::Linker");
-  }
+    assert(llvm::StringRef(Cmd.getCreator().getName()) == "clang");
 
-	// Initialize a compiler invocation object from the clang (-cc1) arguments.
-	const driver::ArgStringList &CCArgs = Cmd.getArguments();
-	CompilerInvocation::CreateFromArgs(*CI,
-	                                 const_cast<const char **>(CCArgs.data()),
-	                                 const_cast<const char **>(CCArgs.data()) + CCArgs.size(),
-	                                 *Diags);
-	CompilerInstance Clang;
-	Clang.setInvocation(std::move(CI));
+    if (Jobs.size() > 1) {
+        if (Jobs.size() != 2) {
+            printf("too many jobs\n");
+            for(int i=2; i<Args.size(); i++) {
+                delete[] Args[i];
+            }
+            goto error;
+        }
+        const driver::Command &Cmd2 = cast<driver::Command>(*(++Jobs.begin()));
+        assert(llvm::StringRef(Cmd2.getCreator().getName()) == "GNU::Linker");
+    }
 
-	// Create the compilers actual diagnostics engine.
-	Clang.createDiagnostics();
-	if (!Clang.hasDiagnostics())
-		return nullptr;
+  	// Initialize a compiler invocation object from the clang (-cc1) arguments.
+  	const driver::ArgStringList &CCArgs = Cmd.getArguments();
+  	CompilerInvocation::CreateFromArgs(*CI,
+  	                                 const_cast<const char **>(CCArgs.data()),
+  	                                 const_cast<const char **>(CCArgs.data()) + CCArgs.size(),
+  	                                 *Diags);
+  	CompilerInstance Clang;
+  	Clang.setInvocation(std::move(CI));
 
-	if (!Clang.ExecuteAction(Act))
-		return nullptr;
+  	// Create the compilers actual diagnostics engine.
+  	Clang.createDiagnostics();
 
-	auto M = Act.takeModule();
-  for(llvm::Function& f:M->functions()) {
-      f.removeFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
-  }
-  return M;
+    if (!Clang.hasDiagnostics()) {
+        for(int i=2; i<Args.size(); i++) {
+            delete[] Args[i];
+        }
+        goto error;
+    }
+
+  	if (!Clang.ExecuteAction(Act)) {
+        for(int i=2; i<Args.size(); i++) {
+            delete[] Args[i];
+        }
+        goto error;
+    }
+
+    for(int i=2; i<Args.size(); i++) {
+        delete[] Args[i];
+    }
+    goto error;
+
+	std::shared_ptr<llvm::Module> M(Act.takeModule());
+    for(llvm::Function& f:M->functions()) {
+        f.removeFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
+    }
+
+    for(int i=2; i<Args.size(); i++) {
+        delete[] Args[i];
+    }
+    contexts[M.get()] = context;
+    return M;
+
+    }
+
+    error:
+    delete context;
+    llvm::llvm_shutdown();
+    return nullptr;
 }
 
 class PassLister : public llvm::PassRegistrationListener {
@@ -243,7 +287,7 @@ bool applyOptLevel(llvm::Module* M, int level) {
         }
         return true;
     } else {
-        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
+        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
         return false;
     }
 }
@@ -267,7 +311,7 @@ bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
 
         return true;
     } else {
-        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
+        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
         return false;
     }
 }
@@ -436,23 +480,23 @@ PYBIND11_MODULE(pyllvm, m) {
 //  polly::initializePollyPasses(*PRegistry);
 //#endif
 
-  py::class_<llvm::Module>(m,"Module")
-    .def("dump", [=](llvm::Module& lm) {
-        lm.print(llvm::dbgs(), nullptr, false, true);
+  py::class_<llvm::Module, std::shared_ptr<llvm::Module>>(m,"Module")
+    .def("dump", [=](std::shared_ptr<llvm::Module> lm) {
+        lm->print(llvm::dbgs(), nullptr, false, true);
         return;
     })
-    .def("__str__", [=](llvm::Module& lm) {
+    .def("__str__", [=](std::shared_ptr<llvm::Module> lm) {
         std::string str;
         llvm::raw_string_ostream rso(str);
-        lm.print(rso, nullptr, false, false);
+        lm->print(rso, nullptr, false, false);
         return str;
     })
-    .def("clone", [=](llvm::Module& lm) {
-        return llvm::CloneModule(&lm);
+    .def("clone", [=](std::shared_ptr<llvm::Module> lm) {
+        return llvm::CloneModule(lm.get());
     })
-    .def("timeFunction", [=](llvm::Module& lm, std::string fn, unsigned int repeat=1) {
+    .def("timeFunction", [=](std::shared_ptr<llvm::Module> lm, std::string fn, unsigned int repeat=1) {
       AutoJIT j;
-      j.addModule(llvm::CloneModule(&lm));
+      j.addModule(llvm::CloneModule(lm.get()));
 
       int r = setjmp(buffer);
 
@@ -477,12 +521,16 @@ PYBIND11_MODULE(pyllvm, m) {
         signal(signal_types[i], SIG_DFL);
       }
       return runtime;
-
     })
-    .def("getStats", [=](llvm::Module& lm, std::string fn){
-      auto F = lm.getFunction(fn);
+    .def("getStats", [=](std::shared_ptr<llvm::Module> lm, std::string fn){
+      auto F = lm->getFunction(fn);
       assert(F);
       return getStats(*F);
+    })
+    .def("cleanup", [=](std::shared_ptr<llvm::Module> lm) {
+      auto ctx = contexts[lm.get()];
+      contexts.erase(lm.get());
+      delete ctx;
     });
 
   py::class_<llvm::PassInfo>(m,"PassInfo")

@@ -237,7 +237,7 @@ bool applyOptLevel(llvm::Module* M, int level) {
         }
         return true;
     } else {
-        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
+        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
         return false;
     }
 }
@@ -261,7 +261,7 @@ bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
 
         return true;
     } else {
-        std::cerr << "Caught segfault at address " << (void*)r << std::endl;
+        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
         return false;
     }
 }
