@@ -31,6 +31,7 @@
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Frontend/PCHContainerOperations.h>
 #include <clang/Lex/PreprocessorOptions.h>
+#include <clang/Sema/Sema.h>
 
 #include <llvm/PassInfo.h>
 #include <llvm/ADT/SmallString.h>
@@ -68,23 +69,20 @@ using namespace clang;
 using namespace clang;
 using namespace clang::driver;
 
-std::map<const llvm::Module*, llvm::LLVMContext*> contexts;
-DiagnosticOptions DiagOpts;
-DiagnosticsEngine* Diags;
-
 std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vector<std::string> addl_args) {
-	
+    
     llvm::LLVMContext* context = new llvm::LLVMContext();
 
     {
     EmitLLVMOnlyAction Act(context);
 
     std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
+    auto opts = new DiagnosticOptions;
+    TextDiagnosticPrinter printer(llvm::errs(), opts);
+    std::unique_ptr<DiagnosticsEngine> Diags(new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), opts, &printer, false));
+    Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags.get());
 
-    Diags->Reset();
-	  Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
-
-	  SmallVector<const char *, 2> Args {"clang", filename.c_str()};
+    SmallVector<const char *, 2> Args {"clang", filename.c_str()};
 
     for(const std::string s: addl_args) {
         char* ns = new char[s.length()+1];
@@ -92,7 +90,7 @@ std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vec
         Args.emplace_back(ns);
     }
 
-	  std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
+    std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
 
     if (!C) {
         for(int i=2; i<Args.size(); i++) {
@@ -101,7 +99,7 @@ std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vec
         goto error;
     }
 
-	  const driver::JobList &Jobs = C->getJobs();
+    const driver::JobList &Jobs = C->getJobs();
 
     if (Jobs.size() == 0) {
         printf("no valid job\n");
@@ -127,53 +125,48 @@ std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vec
         assert(llvm::StringRef(Cmd2.getCreator().getName()) == "GNU::Linker");
     }
 
-  	// Initialize a compiler invocation object from the clang (-cc1) arguments.
-  	const driver::ArgStringList &CCArgs = Cmd.getArguments();
-  	CompilerInvocation::CreateFromArgs(*CI,
-  	                                 const_cast<const char **>(CCArgs.data()),
-  	                                 const_cast<const char **>(CCArgs.data()) + CCArgs.size(),
-  	                                 *Diags);
-  	CompilerInstance Clang;
-  	Clang.setInvocation(std::move(CI));
+    // Initialize a compiler invocation object from the clang (-cc1) arguments.
+    const driver::ArgStringList &CCArgs = Cmd.getArguments();
+    CompilerInvocation::CreateFromArgs(*CI,
+                                     const_cast<const char **>(CCArgs.data()),
+                                     const_cast<const char **>(CCArgs.data()) + CCArgs.size(),
+                                     *Diags.get());
+    CI->getFrontendOpts().DisableFree = false;
+    CompilerInstance Clang;
+    Clang.setInvocation(std::move(CI));
 
-  	// Create the compilers actual diagnostics engine.
-  	Clang.createDiagnostics();
+    // Create the compilers actual diagnostics engine.
+    Clang.setDiagnostics(Diags.release());
 
-    if (!Clang.hasDiagnostics()) {
+    if (!Clang.ExecuteAction(Act)) {
         for(int i=2; i<Args.size(); i++) {
             delete[] Args[i];
         }
         goto error;
     }
 
-  	if (!Clang.ExecuteAction(Act)) {
+    llvm::Module* M = Act.takeModule().release();
+    if (M == nullptr) {
         for(int i=2; i<Args.size(); i++) {
             delete[] Args[i];
         }
         goto error;
     }
 
-    for(int i=2; i<Args.size(); i++) {
-        delete[] Args[i];
-    }
-    goto error;
-
-	std::shared_ptr<llvm::Module> M(Act.takeModule());
-    for(llvm::Function& f:M->functions()) {
+    for(llvm::Function& f: M->functions()) {
         f.removeFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
     }
 
     for(int i=2; i<Args.size(); i++) {
         delete[] Args[i];
     }
-    contexts[M.get()] = context;
-    return M;
-
+    return std::shared_ptr<llvm::Module>(M, [=](llvm::Module* lm){
+        delete context;
+        });
     }
 
     error:
     delete context;
-    llvm::llvm_shutdown();
     return nullptr;
 }
 
@@ -346,7 +339,11 @@ bool createBinary(llvm::Module* M, std::string output) {
 
 
 	std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
-	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags);
+
+    auto opts = new DiagnosticOptions;
+    TextDiagnosticPrinter printer(llvm::errs(), opts);
+    DiagnosticsEngine Diags(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), opts, &printer, false);
+	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), Diags);
 
 	llvm::SmallVector<const char *, 6> Args {"clang", "-x", "ir", tmpfile.c_str(), "-o", output.c_str()};
 	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
@@ -438,12 +435,9 @@ static inline unsigned long long todval (struct timeval *tp) {
 
 
 PYBIND11_MODULE(pyllvm, m) {
-  Diags = new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &DiagOpts, new TextDiagnosticPrinter(llvm::errs(), &DiagOpts));
-
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
-
 
   // Initialize passes
   PRegistry = llvm::PassRegistry::getPassRegistry();
@@ -528,9 +522,9 @@ PYBIND11_MODULE(pyllvm, m) {
       return getStats(*F);
     })
     .def("cleanup", [=](std::shared_ptr<llvm::Module> lm) {
-      auto ctx = contexts[lm.get()];
-      contexts.erase(lm.get());
-      delete ctx;
+      //auto ctx = contexts[lm.get()];
+      //contexts.erase(lm.get());
+      //delete ctx;
     });
 
   py::class_<llvm::PassInfo>(m,"PassInfo")
