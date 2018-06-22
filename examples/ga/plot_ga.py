@@ -5,14 +5,15 @@ import os
 
 def plot_ga(logbook):
     gen = logbook.select("gen")
-    fit_mins = logbook.select("min")
-    #fit_mins = logbook.chapters["fitness"].select("min")
-    #size_avgs = logbook.chapters["size"].select("avg")
+    fit_maxs = logbook.select("max")
+    #fit_mins = logbook.select("min")
 
+    print("Max: ")
+    print(fit_maxs)
     import matplotlib.pyplot as plt
 
     fig, ax1 = plt.subplots()
-    line1 = ax1.plot(gen, fit_mins, "b-", label="Minimum Fitness")
+    line1 = ax1.plot(gen, fit_maxs, "b-", label="Maximum Fitness")
     ax1.set_xlabel("Generation")
     ax1.set_ylabel("Fitness", color="b")
     for tl in ax1.get_yticklabels():
@@ -34,7 +35,6 @@ def plot_ga(logbook):
 if __name__ == "__main__":
     bm_dir = "../../benchmarks/polybench-c-3.2/"
     pgms = get_passes.baseline_11_polybenmarks(bm_dir)
-    pgms = pgms[0:1]
 
     for pgm in pgms:
         print ('Found C source: %s'%pgm)
