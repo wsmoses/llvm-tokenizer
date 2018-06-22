@@ -202,50 +202,34 @@ extern "C" {
   jmp_buf buffer;
   static char stack[SIGSTKSZ];
 
-  void handler(int signal_code){
-
-    longjmp(buffer, signal_code);
-  }
-
-  void segfault_handler(int signal, siginfo_t *si, void *arg) {
-    assert(signal == SIGSEGV);
-    int ret = (int)(size_t)si->si_addr;
+  void handler(int signal, siginfo_t *si, void *arg) {
+    int ret = 0;
+    if (signal == SIGSEGV) {
+        ret = (int)(size_t)si->si_addr;
+    }    
     if (ret == 0) {
       ret = 0xDEADBEEF;
     }
     longjmp(buffer, ret);
   }
 
-  void set_signal(int sig, void(*handle)(int)) {
-    struct sigaction sa;
-
-    sigset_t block_mask;
-
-    sigemptyset (&block_mask);
-    sa.sa_handler = handle;
-    sa.sa_mask = block_mask;
-    sa.sa_flags = SA_NODEFER;
-
-    if (sigaction(sig, &sa, NULL) == -1) {
-      perror("Error: cannot handle signal");
-    }
-  }
-
-  void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)) {
-  stack_t ss;
-  ss.ss_size = SIGSTKSZ;
-  ss.ss_sp = stack;
-
+  void set_signal(void(*handler)(int, siginfo_t*, void*)) {
+    stack_t ss;
+    ss.ss_size = SIGSTKSZ;
+    ss.ss_sp = stack;
 
     struct sigaction sa;
 
     memset(&sa, 0, sizeof(struct sigaction));
     sigemptyset(&sa.sa_mask);
     sigaltstack(&ss, 0);
-    sa.sa_sigaction = segfault_handler;
+    sa.sa_sigaction = handler;
     sa.sa_flags   = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
-    if (sigaction(SIGSEGV, &sa, NULL) == -1) {
-      perror("Error: cannot handle signal");
+  
+    for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+        if (sigaction(signal_types[i], &sa, NULL) == -1) {
+          perror("Error: cannot handle signal");
+        }
     }
   }
 }
@@ -254,8 +238,7 @@ bool applyOptLevel(llvm::Module* M, int level) {
     int r = setjmp(buffer);
 
     if (r == 0) {
-        // Assumes only segfault can happen when applying optimization
-        set_segfault_signal(segfault_handler);
+        set_signal(handler);
         try{
           llvm::PassManagerBuilder pmb;
           pmb.OptLevel = level;
@@ -289,8 +272,7 @@ bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
     int r = setjmp(buffer);
 
     if (r == 0) {
-        // Assumes only segfault can happen when applying optimization
-        set_segfault_signal(segfault_handler);
+        set_signal(handler);
 
         try{
           llvm::legacy::PassManager Passes;
@@ -497,9 +479,7 @@ PYBIND11_MODULE(pyllvm, m) {
       double runtime = std::numeric_limits<double>::infinity();
       if (r == 0) {
         auto fun = (void (*)())j.getSymbolAddress(fn);
-        for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-          set_signal(signal_types[i], handler);
-        }
+        set_signal(handler);
 
         struct timeval t1, t2;
         gettimeofday(&t1,0);
@@ -511,9 +491,9 @@ PYBIND11_MODULE(pyllvm, m) {
         runtime = runtime_ms/1000.0;
       }
 
-      for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-        signal(signal_types[i], SIG_DFL);
-      }
+    //  for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
+    //    signal(signal_types[i], SIG_DFL);
+    //  }
       return runtime;
     })
     .def("getStats", [=](std::shared_ptr<llvm::Module> lm, std::string fn){
