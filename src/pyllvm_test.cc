@@ -65,7 +65,7 @@ using namespace clang;
 using namespace clang::driver;
 
 std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vector<std::string> addl_args) {
-    
+
     llvm::LLVMContext* context = new llvm::LLVMContext();
 
     {
@@ -165,6 +165,106 @@ std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vec
     return nullptr;
 }
 
+llvm::PassRegistry* PRegistry;
+
+extern "C" {
+  int signal_types[] = {
+      SIGILL,
+      SIGTRAP,
+      SIGABRT,
+      SIGBUS,
+      SIGFPE,
+      SIGSEGV,
+      SIGSYS,
+      SIGINT
+  };
+
+  jmp_buf buffer;
+  static char stack[SIGSTKSZ];
+
+  void handler(int signal_code){
+
+    longjmp(buffer, signal_code);
+  }
+
+  void segfault_handler(int signal, siginfo_t *si, void *arg) {
+    assert(signal == SIGSEGV);
+    int ret = (int)(size_t)si->si_addr;
+    if (ret == 0) {
+      ret = 0xDEADBEEF;
+    }
+    longjmp(buffer, ret);
+  }
+
+  void set_signal(int sig, void(*handle)(int)) {
+    struct sigaction sa;
+
+    sigset_t block_mask;
+
+    sigemptyset (&block_mask);
+    sa.sa_handler = handle;
+    sa.sa_mask = block_mask;
+    sa.sa_flags = SA_NODEFER;
+
+    if (sigaction(sig, &sa, NULL) == -1) {
+      perror("Error: cannot handle signal");
+    }
+  }
+
+  void set_segfault_signal(void(*segfault_handler)(int, siginfo_t*, void*)) {
+  stack_t ss;
+  ss.ss_size = SIGSTKSZ;
+  ss.ss_sp = stack;
+
+
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof(struct sigaction));
+    sigemptyset(&sa.sa_mask);
+    sigaltstack(&ss, 0);
+    sa.sa_sigaction = segfault_handler;
+    sa.sa_flags   = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
+    if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+      perror("Error: cannot handle signal");
+    }
+  }
+}
+
+bool applyOptLevel(llvm::Module* M, int level) {
+    int r = setjmp(buffer);
+
+    if (r == 0) {
+        // Assumes only segfault can happen when applying optimization
+        set_segfault_signal(segfault_handler);
+        try{
+          llvm::PassManagerBuilder pmb;
+          pmb.OptLevel = level;
+
+          llvm::legacy::PassManager Passes;
+          std::unique_ptr<llvm::legacy::FunctionPassManager> FPasses(new llvm::legacy::FunctionPassManager(M));
+
+          pmb.populateModulePassManager(Passes);
+          pmb.populateFunctionPassManager(*FPasses);
+
+          Passes.add(llvm::createVerifierPass());
+          FPasses->doInitialization();
+          for (llvm::Function &F : *M)
+            FPasses->run(F);
+          FPasses->doFinalization();
+
+          Passes.run(*M);
+          Passes.add(llvm::createVerifierPass());
+        } catch(std::exception& e) {
+            std::cerr << "Exception caught : " << e.what() << std::endl;
+            return false;
+        }
+        return true;
+    } else {
+        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
+        return false;
+    }
+}
+
 int main(int argc, char** argv) {
   int numiters = atol(argv[1]);
   printf("running for %d iters\n", numiters);
@@ -174,10 +274,41 @@ int main(int argc, char** argv) {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
+  // Initialize passes
+  PRegistry = llvm::PassRegistry::getPassRegistry();
+  llvm::initializeCore(*PRegistry);
+  llvm::initializeCoroutines(*PRegistry);
+  llvm::initializeScalarOpts(*PRegistry);
+  llvm::initializeObjCARCOpts(*PRegistry);
+  llvm::initializeVectorization(*PRegistry);
+  //llvm::initializeTapirOpts(*PRegistry);
+  llvm::initializeIPO(*PRegistry);
+  llvm::initializeAnalysis(*PRegistry);
+  llvm::initializeTransformUtils(*PRegistry);
+  llvm::initializeInstCombine(*PRegistry);
+  llvm::initializeInstrumentation(*PRegistry);
+  llvm::initializeTarget(*PRegistry);
+  // For codegen passes, only passes that do IR to IR transformation are
+  // supported.
+  llvm::initializeScalarizeMaskedMemIntrinPass(*PRegistry);
+  llvm::initializeCodeGenPreparePass(*PRegistry);
+  llvm::initializeAtomicExpandPass(*PRegistry);
+  llvm::initializeRewriteSymbolsLegacyPassPass(*PRegistry);
+  llvm::initializeWinEHPreparePass(*PRegistry);
+  llvm::initializeDwarfEHPreparePass(*PRegistry);
+  llvm::initializeSafeStackLegacyPassPass(*PRegistry);
+  llvm::initializeSjLjEHPreparePass(*PRegistry);
+  llvm::initializePreISelIntrinsicLoweringLegacyPassPass(*PRegistry);
+  llvm::initializeGlobalMergePass(*PRegistry);
+  llvm::initializeInterleavedAccessPass(*PRegistry);
+  llvm::initializeCountingFunctionInserterPass(*PRegistry);
+  llvm::initializeUnreachableBlockElimLegacyPassPass(*PRegistry);
+  llvm::initializeExpandReductionsPass(*PRegistry);
+
   std::vector<std::string> args = {"-I", "/home/wmoses/git/Auto-Phase/benchmarks/polybench-c-3.2/utilities", "-include", "/home/wmoses/git/Auto-Phase/benchmarks/polybench-c-3.2/utilities/polybench.c", "-DSMALL_DATASET"};
   for(int i=0; i<numiters; i++) {
     auto g = getLLVM("/home/wmoses/git/Auto-Phase/benchmarks/polybench-c-3.2/linear-algebra/kernels/2mm/2mm.c", args);
+    applyOptLevel(g.get(), 3);
   }
-
   //llvm::llvm_shutdown();
 }

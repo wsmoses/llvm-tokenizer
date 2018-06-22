@@ -70,7 +70,7 @@ using namespace clang;
 using namespace clang::driver;
 
 std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vector<std::string> addl_args) {
-    
+
     llvm::LLVMContext* context = new llvm::LLVMContext();
 
     {
@@ -244,7 +244,7 @@ bool applyOptLevel(llvm::Module* M, int level) {
           pmb.OptLevel = level;
 
           llvm::legacy::PassManager Passes;
-          std::unique_ptr<llvm::legacy::FunctionPassManager> FPasses;
+          std::unique_ptr<llvm::legacy::FunctionPassManager> FPasses(new llvm::legacy::FunctionPassManager(M));
 
           pmb.populateModulePassManager(Passes);
           pmb.populateFunctionPassManager(*FPasses);
