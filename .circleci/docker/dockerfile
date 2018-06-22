@@ -31,3 +31,5 @@ RUN conda install pytorch torchvision -c pytorch
 #RUN conda install pytorch torchvision cuda90 -c pytorch
 
 RUN python -m pip install tensorflow-gpu
+RUN apt-get install -y --no-install-recommends libedit-dev
+
