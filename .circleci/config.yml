@@ -25,5 +25,9 @@ jobs:
           command: cd test && python3.6 ./pytorchtest.py
       
       - run:
+          name: Test-assertionfix
+          command: cd test && python3.6 ./assertionfix.py
+      
+      - run:
           name: Test-time
           command: cd test && python3.6 ./testTime.py

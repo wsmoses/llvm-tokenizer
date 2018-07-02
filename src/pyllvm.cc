@@ -234,6 +234,12 @@ extern "C" {
   }
 }
 
+void llvm_handler(void*, const std::string& reason, bool gencrash) {
+    std::cout << "llvm error: " << reason << "\n";
+    int ret = 0xDEADBEED;
+    longjmp(buffer, ret);
+}
+
 bool applyOptLevel(llvm::Module* M, int level) {
     int r = setjmp(buffer);
 
@@ -452,6 +458,7 @@ PYBIND11_MODULE(pyllvm, m) {
   llvm::initializeUnreachableBlockElimLegacyPassPass(*PRegistry);
   llvm::initializeExpandReductionsPass(*PRegistry);
 
+  llvm::install_fatal_error_handler(&llvm_handler);
 //#ifdef LINK_POLLY_INTO_TOOLS
 //  polly::initializePollyPasses(*PRegistry);
 //#endif
