@@ -90,7 +90,7 @@ setup(
     author_email='wmoses@mit.edu',
     description='Some python LLVM bindings',
     long_description='',
-    install_requires=['deap',],
+    install_requires=['deap','boto3', 'fabric'],
     ext_modules=[CMakeExtension('pyllvm')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
