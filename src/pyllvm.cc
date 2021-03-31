@@ -1,9 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-
-#include "stats.h"
-
 #include <iostream>
 #include <memory>
 #include <string>
@@ -14,526 +11,520 @@
 #include <setjmp.h>
 #include <sys/time.h>
 
-
-#include <clang/Basic/Diagnostic.h>
-#include <clang/Basic/DiagnosticOptions.h>
-#include <clang/Basic/FileSystemOptions.h>
-#include <clang/CodeGen/CodeGenAction.h>
-#include <clang/CodeGen/ModuleBuilder.h>
-#include <clang/Driver/Compilation.h>
-#include <clang/Driver/Driver.h>
-#include <clang/Driver/Tool.h>
-#include <clang/Frontend/ASTConsumers.h>
-#include <clang/Frontend/ASTUnit.h>
-#include <clang/Frontend/CompilerInstance.h>
-#include <clang/Frontend/CompilerInvocation.h>
-#include <clang/Frontend/FrontendDiagnostic.h>
-#include <clang/Frontend/TextDiagnosticPrinter.h>
-#include <clang/Frontend/PCHContainerOperations.h>
-#include <clang/Lex/PreprocessorOptions.h>
-#include <clang/Sema/Sema.h>
-
-#include <llvm/PassInfo.h>
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include <llvm/ExecutionEngine/Orc/LambdaResolver.h>
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/IR/Attributes.h>
-#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/AsmParser/LLLexer.h>
+#include <llvm/IR/Type.h>
 #include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Mangler.h>
-#include <llvm/IR/Verifier.h>
-#include <llvm/Option/ArgList.h>
-#include <llvm/Support/Debug.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/Host.h>
-#include <llvm/Support/ManagedStatic.h>
-#include <llvm/Support/Path.h>
-#include <llvm/Support/TargetRegistry.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
-#include <llvm/Transforms/Utils/Cloning.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm-c/Core.h>
+#include "llvm/IR/DerivedTypes.h"
 
 namespace py = pybind11;
-using namespace clang;
+using namespace llvm;
 
-using namespace clang;
-using namespace clang::driver;
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/AsmParser/LLLexer.h"
+#include "llvm/AsmParser/LLToken.h"
 
-std::shared_ptr<llvm::Module> getLLVM(const std::string filename, const std::vector<std::string> addl_args) {
-
-    llvm::LLVMContext* context = new llvm::LLVMContext();
-
-    {
-    EmitLLVMOnlyAction Act(context);
-
-    std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
-    auto opts = new DiagnosticOptions;
-    TextDiagnosticPrinter printer(llvm::errs(), opts);
-    std::unique_ptr<DiagnosticsEngine> Diags(new DiagnosticsEngine(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), opts, &printer, false));
-    Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), *Diags.get());
-
-    SmallVector<const char *, 2> Args {"clang", filename.c_str()};
-
-    for(const std::string s: addl_args) {
-        char* ns = new char[s.length()+1];
-        strcpy(ns, s.c_str());
-        Args.emplace_back(ns);
-    }
-
-    std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
-
-    if (!C) {
-        for(int i=2; i<Args.size(); i++) {
-            delete[] Args[i];
-        }
-        goto error;
-    }
-
-    const driver::JobList &Jobs = C->getJobs();
-
-    if (Jobs.size() == 0) {
-        printf("no valid job\n");
-        for(int i=2; i<Args.size(); i++) {
-            delete[] Args[i];
-        }
-        goto error;
-    }
-
-    const driver::Command &Cmd = cast<driver::Command>(*Jobs.begin());
-
-    assert(llvm::StringRef(Cmd.getCreator().getName()) == "clang");
-
-    if (Jobs.size() > 1) {
-        if (Jobs.size() != 2) {
-            printf("too many jobs\n");
-            for(int i=2; i<Args.size(); i++) {
-                delete[] Args[i];
-            }
-            goto error;
-        }
-        const driver::Command &Cmd2 = cast<driver::Command>(*(++Jobs.begin()));
-        assert(llvm::StringRef(Cmd2.getCreator().getName()) == "GNU::Linker");
-    }
-
-    // Initialize a compiler invocation object from the clang (-cc1) arguments.
-    const driver::ArgStringList &CCArgs = Cmd.getArguments();
-    CompilerInvocation::CreateFromArgs(*CI,
-                                     const_cast<const char **>(CCArgs.data()),
-                                     const_cast<const char **>(CCArgs.data()) + CCArgs.size(),
-                                     *Diags.get());
-    CI->getFrontendOpts().DisableFree = false;
-    CompilerInstance Clang;
-    Clang.setInvocation(std::move(CI));
-
-    // Create the compilers actual diagnostics engine.
-    Clang.setDiagnostics(Diags.release());
-
-    if (!Clang.ExecuteAction(Act)) {
-        for(int i=2; i<Args.size(); i++) {
-            delete[] Args[i];
-        }
-        goto error;
-    }
-
-    llvm::Module* M = Act.takeModule().release();
-    if (M == nullptr) {
-        for(int i=2; i<Args.size(); i++) {
-            delete[] Args[i];
-        }
-        goto error;
-    }
-
-    for(llvm::Function& f: M->functions()) {
-        f.removeFnAttr(llvm::Attribute::AttrKind::OptimizeNone);
-    }
-
-    for(int i=2; i<Args.size(); i++) {
-        delete[] Args[i];
-    }
-    return std::shared_ptr<llvm::Module>(M, [=](llvm::Module* lm){
-        delete context;
-        });
-    }
-
-    error:
-    delete context;
-    return nullptr;
-}
-
-class PassLister : public llvm::PassRegistrationListener {
-public:
-	std::list<const llvm::PassInfo*> passes;
-	void passEnumerate(const llvm::PassInfo* pi) override {
-		passes.push_back(pi);
-	}
-	void passRegistered(const llvm::PassInfo* pi) override {}
+    template <class T> class ptr_wrapper
+{
+    public:
+        ptr_wrapper() : ptr(nullptr) {}
+        ptr_wrapper(T* ptr) : ptr(ptr) {}
+        ptr_wrapper(const ptr_wrapper& other) : ptr(other.ptr) {}
+        T& operator* () const { return *ptr; }
+        T* operator->() const { return  ptr; }
+        T* get() const { return ptr; }
+        T& operator[](std::size_t idx) const { return ptr[idx]; }
+    private:
+        T* ptr;
 };
 
-llvm::PassRegistry* PRegistry;
 
-std::vector<const llvm::PassInfo*> getOpts() {
-	PassLister lister;
-	PRegistry->enumerateWith(&lister);
-	return std::vector<const llvm::PassInfo*>(lister.passes.begin(), lister.passes.end());
-}
-
-extern "C" {
-  int signal_types[] = {
-      SIGILL,
-      SIGTRAP,
-      SIGABRT,
-      SIGBUS,
-      SIGFPE,
-      SIGSEGV,
-      SIGSYS,
-      SIGINT
-  };
-
-  jmp_buf buffer;
-  static char stack[SIGSTKSZ];
-
-  void handler(int signal, siginfo_t *si, void *arg) {
-    int ret = 0;
-    if (signal == SIGSEGV) {
-        ret = (int)(size_t)si->si_addr;
-    }    
-    if (ret == 0) {
-      ret = 0xDEADBEEF;
-    }
-    longjmp(buffer, ret);
-  }
-
-  void set_signal(void(*handler)(int, siginfo_t*, void*)) {
-    stack_t ss;
-    ss.ss_size = SIGSTKSZ;
-    ss.ss_sp = stack;
-
-    struct sigaction sa;
-
-    memset(&sa, 0, sizeof(struct sigaction));
-    sigemptyset(&sa.sa_mask);
-    sigaltstack(&ss, 0);
-    sa.sa_sigaction = handler;
-    sa.sa_flags   = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
-  
-    for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-        if (sigaction(signal_types[i], &sa, NULL) == -1) {
-          perror("Error: cannot handle signal");
-        }
-    }
-  }
-}
-
-void llvm_handler(void*, const std::string& reason, bool gencrash) {
-    std::cout << "llvm error: " << reason << "\n";
-    int ret = 0xDEADBEED;
-    longjmp(buffer, ret);
-}
-
-bool applyOptLevel(llvm::Module* M, int level) {
-    int r = setjmp(buffer);
-
-    if (r == 0) {
-        set_signal(handler);
-        try{
-          llvm::PassManagerBuilder pmb;
-          pmb.OptLevel = level;
-
-          llvm::legacy::PassManager Passes;
-          std::unique_ptr<llvm::legacy::FunctionPassManager> FPasses(new llvm::legacy::FunctionPassManager(M));
-
-          pmb.populateModulePassManager(Passes);
-          pmb.populateFunctionPassManager(*FPasses);
-
-          Passes.add(llvm::createVerifierPass());
-          FPasses->doInitialization();
-          for (llvm::Function &F : *M)
-            FPasses->run(F);
-          FPasses->doFinalization();
-
-          Passes.run(*M);
-          Passes.add(llvm::createVerifierPass());
-        } catch(std::exception& e) {
-            std::cerr << "Exception caught : " << e.what() << std::endl;
-            return false;
-        }
-        return true;
-    } else {
-        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
-        return false;
-    }
-}
-
-bool applyOpt(const llvm::PassInfo* pi, llvm::Module* M) {
-    int r = setjmp(buffer);
-
-    if (r == 0) {
-        set_signal(handler);
-
-        try{
-          llvm::legacy::PassManager Passes;
-          Passes.add(pi->createPass());
-          Passes.add(llvm::createVerifierPass());
-          Passes.run(*M);
-        } catch(std::exception& e) {
-            std::cerr << "Exception caught : " << e.what() << std::endl;
-            return false;
-        }
-
-        return true;
-    } else {
-        std::cerr << "Caught segfault at address " << (void*)(size_t)r << std::endl;
-        return false;
-    }
-}
-
-using ListCasterBase = pybind11::detail::list_caster<std::vector<const llvm::PassInfo*>, const llvm::PassInfo*>;
-namespace pybind11 { namespace detail {
-template<> struct type_caster<std::vector<const llvm::PassInfo*>> : ListCasterBase {
-    static handle cast(const std::vector<const llvm::PassInfo*> &src, return_value_policy, handle parent) {
-        return ListCasterBase::cast(src, return_value_policy::reference, parent);
-    }
-    static handle cast(const std::vector<const llvm::PassInfo*> *src, return_value_policy pol, handle parent) {
-        return cast(*src, pol, parent);
-    }
-};
-}}
-
-bool createBinary(llvm::Module* M, std::string output) {
-	std::string tmpfile(std::tmpnam(nullptr));
-
-	{
-		std::error_code EC;
-		llvm::raw_fd_ostream dest(tmpfile.c_str(), EC, llvm::sys::fs::F_None);
-
-		if (EC) {
-		  llvm::errs() << "Could not open file: " << EC.message();
-		  return false;
-		}
-
-	    M->print(dest, nullptr, false, false);
-		dest.flush();
-	}
-
-
-	std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
-
-    auto opts = new DiagnosticOptions;
-    TextDiagnosticPrinter printer(llvm::errs(), opts);
-    DiagnosticsEngine Diags(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), opts, &printer, false);
-	Driver TheDriver(CLANG_BINARY, llvm::sys::getProcessTriple(), Diags);
-
-	llvm::SmallVector<const char *, 6> Args {"clang", "-x", "ir", tmpfile.c_str(), "-o", output.c_str()};
-	std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
-	if (!C) return false;
-
-	llvm::SmallVector<std::pair<int, const Command *>, 2> FailingCommands;
-	int Res = TheDriver.ExecuteCompilation(*C, FailingCommands);
-
-	if (Res < 0) {
-		for(auto c : FailingCommands) {
-			c.second->Print(llvm::errs(), "\n", true);
-		}
-		return false;
-	}
-
-  return true;
-}
-
-class AutoJIT {
-private:
-  std::unique_ptr<llvm::TargetMachine> TM_;
-  const llvm::DataLayout DL_;
-  llvm::orc::RTDyldObjectLinkingLayer objectLayer_;
-  llvm::orc::IRCompileLayer<decltype(objectLayer_), llvm::orc::SimpleCompiler>
-    compileLayer_;
-public:
-  AutoJIT() :
-    TM_(llvm::EngineBuilder().selectTarget()),
-    DL_(TM_->createDataLayout()),
-    objectLayer_([]() { return std::make_shared<llvm::SectionMemoryManager>(); }),
-    compileLayer_(objectLayer_, llvm::orc::SimpleCompiler(*TM_)) {
-      std::string err;
-      llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr, &err);
-      if (err != "") {
-        throw std::runtime_error("Failed to initialize library: " + err);
-      }
-  }
-
-  using ModuleHandle = decltype(compileLayer_)::ModuleHandleT;
-
-  llvm::TargetMachine& getTargetMachine() {
-    return *TM_;
-  }
-
-  ModuleHandle addModule(std::unique_ptr<llvm::Module> M) {
-    M->setTargetTriple(TM_->getTargetTriple().str());
-    auto Resolver = llvm::orc::createLambdaResolver(
-        [&](const std::string& Name) {
-          if (auto Sym = compileLayer_.findSymbol(Name, false))
-            return Sym;
-          return llvm::JITSymbol(nullptr);
-        },
-        [](const std::string& Name) {
-          if (auto SymAddr = llvm::RTDyldMemoryManager::getSymbolAddressInProcess(Name))
-            return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
-          return llvm::JITSymbol(nullptr);
-        });
-
-    auto res = compileLayer_.addModule(std::move(M), std::move(Resolver));
-    //handleErrors(res);
-    assert(res && "Failed to JIT compile.");
-    return *res;
-  }
-
-  /*
-  void removeModule(ModuleHandle H) {
-    llvm::Error res = compileLayer_.removeModule(H);
-    assert(res && "Failed to remove JIT compile.");
-  }
-  */
-
-  llvm::JITSymbol findSymbol(const std::string Name) {
-    std::string MangledName;
-    llvm::raw_string_ostream MangledNameStream(MangledName);
-    llvm::Mangler::getNameWithPrefix(MangledNameStream, Name, DL_);
-    return compileLayer_.findSymbol(MangledNameStream.str(), true);
-  }
-
-  llvm::JITTargetAddress getSymbolAddress(const std::string Name) {
-    auto res = findSymbol(Name).getAddress();
-    assert(res && "Could not find symbol");
-    return *res;
-  }
-};
-
-static inline unsigned long long todval (struct timeval *tp) {
-    return tp->tv_sec * 1000 * 1000 + tp->tv_usec;
-}
-
+    PYBIND11_DECLARE_HOLDER_TYPE(T, ptr_wrapper<T>, true);
 
 PYBIND11_MODULE(pyllvm, m) {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
-  // Initialize passes
-  PRegistry = llvm::PassRegistry::getPassRegistry();
-  llvm::initializeCore(*PRegistry);
-  llvm::initializeCoroutines(*PRegistry);
-  llvm::initializeScalarOpts(*PRegistry);
-  llvm::initializeObjCARCOpts(*PRegistry);
-  llvm::initializeVectorization(*PRegistry);
-  //llvm::initializeTapirOpts(*PRegistry);
-  llvm::initializeIPO(*PRegistry);
-  llvm::initializeAnalysis(*PRegistry);
-  llvm::initializeTransformUtils(*PRegistry);
-  llvm::initializeInstCombine(*PRegistry);
-  llvm::initializeInstrumentation(*PRegistry);
-  llvm::initializeTarget(*PRegistry);
-  // For codegen passes, only passes that do IR to IR transformation are
-  // supported.
-  llvm::initializeScalarizeMaskedMemIntrinPass(*PRegistry);
-  llvm::initializeCodeGenPreparePass(*PRegistry);
-  llvm::initializeAtomicExpandPass(*PRegistry);
-  llvm::initializeRewriteSymbolsLegacyPassPass(*PRegistry);
-  llvm::initializeWinEHPreparePass(*PRegistry);
-  llvm::initializeDwarfEHPreparePass(*PRegistry);
-  llvm::initializeSafeStackLegacyPassPass(*PRegistry);
-  llvm::initializeSjLjEHPreparePass(*PRegistry);
-  llvm::initializePreISelIntrinsicLoweringLegacyPassPass(*PRegistry);
-  llvm::initializeGlobalMergePass(*PRegistry);
-  llvm::initializeInterleavedAccessPass(*PRegistry);
-  llvm::initializeCountingFunctionInserterPass(*PRegistry);
-  llvm::initializeUnreachableBlockElimLegacyPassPass(*PRegistry);
-  llvm::initializeExpandReductionsPass(*PRegistry);
+  llvm::lltok::Kind tok;
+    
+  auto lltok = py::enum_<llvm::lltok::Kind>(m, "lltok", py::arithmetic());
+  #define VAL(x) lltok.value(#x, llvm::lltok::x);
+  VAL(Eof)
+  VAL(Error)
+  VAL(dotdotdot)
+  VAL(equal)
+  VAL(comma)
+  VAL(star)
+  VAL(lsquare)
+  VAL(rsquare)
+  VAL(lbrace)
+  VAL(rbrace)
+  VAL(less)
+  VAL(greater)
+  VAL(lparen)
+  VAL(rparen)
+  VAL(exclaim)
+  VAL(bar)
+  VAL(colon)
+  VAL(kw_vscale)
+  VAL(kw_x)
+  VAL(kw_true)
+  VAL(kw_false)
+  VAL(kw_declare)
+  VAL(kw_define)
+  VAL(kw_global)
+  VAL(kw_constant)
+  VAL(kw_dso_local)
+  VAL(kw_dso_preemptable)
+  VAL(kw_private)
+  VAL(kw_internal)
+  VAL(kw_linkonce)
+  VAL(kw_linkonce_odr)
+  VAL(kw_weak)
+  VAL(kw_weak_odr)
+  VAL(kw_appending)
+  VAL(kw_dllimport)
+  VAL(kw_dllexport)
+  VAL(kw_common)
+  VAL(kw_available_externally)
+  VAL(kw_default)
+  VAL(kw_hidden)
+  VAL(kw_protected)
+  VAL(kw_unnamed_addr)
+  VAL(kw_local_unnamed_addr)
+  VAL(kw_externally_initialized)
+  VAL(kw_extern_weak)
+  VAL(kw_external)
+  VAL(kw_thread_local)
+  VAL(kw_localdynamic)
+  VAL(kw_initialexec)
+  VAL(kw_localexec)
+  VAL(kw_zeroinitializer)
+  VAL(kw_undef)
+  VAL(kw_null)
+  VAL(kw_none)
+  VAL(kw_to)
+  VAL(kw_caller)
+  VAL(kw_within)
+  VAL(kw_from)
+  VAL(kw_tail)
+  VAL(kw_musttail)
+  VAL(kw_notail)
+  VAL(kw_target)
+  VAL(kw_triple)
+  VAL(kw_source_filename)
+  VAL(kw_unwind)
+  VAL(kw_deplibs)
+  VAL(kw_datalayout)
+  VAL(kw_volatile)
+  VAL(kw_atomic)
+  VAL(kw_unordered)
+  VAL(kw_monotonic)
+  VAL(kw_acquire)
+  VAL(kw_release)
+  VAL(kw_acq_rel)
+  VAL(kw_seq_cst)
+  VAL(kw_syncscope)
+  VAL(kw_nnan)
+  VAL(kw_ninf)
+  VAL(kw_nsz)
+  VAL(kw_arcp)
+  VAL(kw_contract)
+  VAL(kw_reassoc)
+  VAL(kw_afn)
+  VAL(kw_fast)
+  VAL(kw_nuw)
+  VAL(kw_nsw)
+  VAL(kw_exact)
+  VAL(kw_inbounds)
+  VAL(kw_inrange)
+  VAL(kw_align)
+  VAL(kw_addrspace)
+  VAL(kw_section)
+  VAL(kw_partition)
+  VAL(kw_alias)
+  VAL(kw_ifunc)
+  VAL(kw_module)
+  VAL(kw_asm)
+  VAL(kw_sideeffect)
+  VAL(kw_alignstack)
+  VAL(kw_inteldialect)
+  VAL(kw_gc)
+  VAL(kw_prefix)
+  VAL(kw_prologue)
+  VAL(kw_c)
+  VAL(kw_cc)
+  VAL(kw_ccc)
+  VAL(kw_fastcc)
+  VAL(kw_coldcc)
+  VAL(kw_intel_ocl_bicc)
+  VAL(kw_cfguard_checkcc)
+  VAL(kw_x86_stdcallcc)
+  VAL(kw_x86_fastcallcc)
+  VAL(kw_x86_thiscallcc)
+  VAL(kw_x86_vectorcallcc)
+  VAL(kw_x86_regcallcc)
+  VAL(kw_arm_apcscc)
+  VAL(kw_arm_aapcscc)
+  VAL(kw_arm_aapcs_vfpcc)
+  VAL(kw_aarch64_vector_pcs)
+  VAL(kw_aarch64_sve_vector_pcs)
+  VAL(kw_msp430_intrcc)
+  VAL(kw_avr_intrcc)
+  VAL(kw_avr_signalcc)
+  VAL(kw_ptx_kernel)
+  VAL(kw_ptx_device)
+  VAL(kw_spir_kernel)
+  VAL(kw_spir_func)
+  VAL(kw_x86_64_sysvcc)
+  VAL(kw_win64cc)
+  VAL(kw_webkit_jscc)
+  VAL(kw_anyregcc)
+  VAL(kw_swiftcc)
+  VAL(kw_preserve_mostcc)
+  VAL(kw_preserve_allcc)
+  VAL(kw_ghccc)
+  VAL(kw_x86_intrcc)
+  VAL(kw_hhvmcc)
+  VAL(kw_hhvm_ccc)
+  VAL(kw_cxx_fast_tlscc)
+  VAL(kw_amdgpu_vs)
+  VAL(kw_amdgpu_ls)
+  VAL(kw_amdgpu_hs)
+  VAL(kw_amdgpu_es)
+  VAL(kw_amdgpu_gs)
+  VAL(kw_amdgpu_ps)
+  VAL(kw_amdgpu_cs)
+  VAL(kw_amdgpu_kernel)
+  VAL(kw_tailcc)
+  VAL(kw_attributes)
+  VAL(kw_allocsize)
+  VAL(kw_alwaysinline)
+  VAL(kw_argmemonly)
+  VAL(kw_sanitize_address)
+  VAL(kw_sanitize_hwaddress)
+  VAL(kw_sanitize_memtag)
+  VAL(kw_builtin)
+  VAL(kw_byval)
+  VAL(kw_inalloca)
+  VAL(kw_cold)
+  VAL(kw_convergent)
+  VAL(kw_dereferenceable)
+  VAL(kw_dereferenceable_or_null)
+  VAL(kw_inaccessiblememonly)
+  VAL(kw_inaccessiblemem_or_argmemonly)
+  VAL(kw_inlinehint)
+  VAL(kw_inreg)
+  VAL(kw_jumptable)
+  VAL(kw_minsize)
+  VAL(kw_naked)
+  VAL(kw_nest)
+  VAL(kw_noalias)
+  VAL(kw_nobuiltin)
+  VAL(kw_nocapture)
+  VAL(kw_noduplicate)
+  VAL(kw_nofree)
+  VAL(kw_noimplicitfloat)
+  VAL(kw_noinline)
+  VAL(kw_norecurse)
+  VAL(kw_nonlazybind)
+  VAL(kw_nonnull)
+  VAL(kw_noredzone)
+  VAL(kw_noreturn)
+  VAL(kw_nosync)
+  VAL(kw_nocf_check)
+  VAL(kw_nounwind)
+  VAL(kw_optforfuzzing)
+  VAL(kw_optnone)
+  VAL(kw_optsize)
+  VAL(kw_readnone)
+  VAL(kw_readonly)
+  VAL(kw_returned)
+  VAL(kw_returns_twice)
+  VAL(kw_signext)
+  VAL(kw_speculatable)
+  VAL(kw_ssp)
+  VAL(kw_sspreq)
+  VAL(kw_sspstrong)
+  VAL(kw_safestack)
+  VAL(kw_shadowcallstack)
+  VAL(kw_sret)
+  VAL(kw_sanitize_thread)
+  VAL(kw_sanitize_memory)
+  VAL(kw_speculative_load_hardening)
+  VAL(kw_strictfp)
+  VAL(kw_swifterror)
+  VAL(kw_swiftself)
+  VAL(kw_uwtable)
+  VAL(kw_willreturn)
+  VAL(kw_writeonly)
+  VAL(kw_zeroext)
+  VAL(kw_immarg)
+  VAL(kw_type)
+  VAL(kw_opaque)
+  VAL(kw_comdat)
+  VAL(kw_any)
+  VAL(kw_exactmatch)
+  VAL(kw_largest)
+  VAL(kw_noduplicates)
+  VAL(kw_samesize)
+  VAL(kw_eq)
+  VAL(kw_ne)
+  VAL(kw_slt)
+  VAL(kw_sgt)
+  VAL(kw_sle)
+  VAL(kw_sge)
+  VAL(kw_ult)
+  VAL(kw_ugt)
+  VAL(kw_ule)
+  VAL(kw_uge)
+  VAL(kw_oeq)
+  VAL(kw_one)
+  VAL(kw_olt)
+  VAL(kw_ogt)
+  VAL(kw_ole)
+  VAL(kw_oge)
+  VAL(kw_ord)
+  VAL(kw_uno)
+  VAL(kw_ueq)
+  VAL(kw_une)
+  VAL(kw_xchg)
+  VAL(kw_nand)
+  VAL(kw_max)
+  VAL(kw_min)
+  VAL(kw_umax)
+  VAL(kw_umin)
+  VAL(kw_fneg)
+  VAL(kw_add)
+  VAL(kw_fadd)
+  VAL(kw_sub)
+  VAL(kw_fsub)
+  VAL(kw_mul)
+  VAL(kw_fmul)
+  VAL(kw_udiv)
+  VAL(kw_sdiv)
+  VAL(kw_fdiv)
+  VAL(kw_urem)
+  VAL(kw_srem)
+  VAL(kw_frem)
+  VAL(kw_shl)
+  VAL(kw_lshr)
+  VAL(kw_ashr)
+  VAL(kw_and)
+  VAL(kw_or)
+  VAL(kw_xor)
+  VAL(kw_icmp)
+  VAL(kw_fcmp)
+  VAL(kw_phi)
+  VAL(kw_call)
+  VAL(kw_trunc)
+  VAL(kw_zext)
+  VAL(kw_sext)
+  VAL(kw_fptrunc)
+  VAL(kw_fpext)
+  VAL(kw_uitofp)
+  VAL(kw_sitofp)
+  VAL(kw_fptoui)
+  VAL(kw_fptosi)
+  VAL(kw_inttoptr)
+  VAL(kw_ptrtoint)
+  VAL(kw_bitcast)
+  VAL(kw_addrspacecast)
+  VAL(kw_select)
+  VAL(kw_va_arg)
+  VAL(kw_landingpad)
+  VAL(kw_personality)
+  VAL(kw_cleanup)
+  VAL(kw_catch)
+  VAL(kw_filter)
+  VAL(kw_ret)
+  VAL(kw_br)
+  VAL(kw_switch)
+  VAL(kw_indirectbr)
+  VAL(kw_invoke)
+  VAL(kw_resume)
+  VAL(kw_unreachable)
+  VAL(kw_cleanupret)
+  VAL(kw_catchswitch)
+  VAL(kw_catchret)
+  VAL(kw_catchpad)
+  VAL(kw_cleanuppad)
+  VAL(kw_callbr)
+  VAL(kw_alloca)
+  VAL(kw_load)
+  VAL(kw_store)
+  VAL(kw_fence)
+  VAL(kw_cmpxchg)
+  VAL(kw_atomicrmw)
+  VAL(kw_getelementptr)
+  VAL(kw_extractelement)
+  VAL(kw_insertelement)
+  VAL(kw_shufflevector)
+  VAL(kw_extractvalue)
+  VAL(kw_insertvalue)
+  VAL(kw_blockaddress)
+  VAL(kw_freeze)
+  VAL(kw_distinct)
+  VAL(kw_uselistorder)
+  VAL(kw_uselistorder_bb)
+  VAL(kw_path)
+  VAL(kw_hash)
+  VAL(kw_gv)
+  VAL(kw_guid)
+  VAL(kw_name)
+  VAL(kw_summaries)
+  VAL(kw_flags)
+  VAL(kw_linkage)
+  VAL(kw_notEligibleToImport)
+  VAL(kw_live)
+  VAL(kw_dsoLocal)
+  VAL(kw_canAutoHide)
+  VAL(kw_function)
+  VAL(kw_insts)
+  VAL(kw_funcFlags)
+  VAL(kw_readNone)
+  VAL(kw_readOnly)
+  VAL(kw_noRecurse)
+  VAL(kw_returnDoesNotAlias)
+  VAL(kw_noInline)
+  VAL(kw_alwaysInline)
+  VAL(kw_calls)
+  VAL(kw_callee)
+  VAL(kw_hotness)
+  VAL(kw_unknown)
+  VAL(kw_hot)
+  VAL(kw_critical)
+  VAL(kw_relbf)
+  VAL(kw_variable)
+  VAL(kw_vTableFuncs)
+  VAL(kw_virtFunc)
+  VAL(kw_aliasee)
+  VAL(kw_refs)
+  VAL(kw_typeIdInfo)
+  VAL(kw_typeTests)
+  VAL(kw_typeTestAssumeVCalls)
+  VAL(kw_typeCheckedLoadVCalls)
+  VAL(kw_typeTestAssumeConstVCalls)
+  VAL(kw_typeCheckedLoadConstVCalls)
+  VAL(kw_vFuncId)
+  VAL(kw_offset)
+  VAL(kw_args)
+  VAL(kw_typeid)
+  VAL(kw_typeidCompatibleVTable)
+  VAL(kw_summary)
+  VAL(kw_typeTestRes)
+  VAL(kw_kind)
+  VAL(kw_unsat)
+  VAL(kw_byteArray)
+  VAL(kw_inline)
+  VAL(kw_single)
+  VAL(kw_allOnes)
+  VAL(kw_sizeM1BitWidth)
+  VAL(kw_alignLog2)
+  VAL(kw_sizeM1)
+  VAL(kw_bitMask)
+  VAL(kw_inlineBits)
+  VAL(kw_wpdResolutions)
+  VAL(kw_wpdRes)
+  VAL(kw_indir)
+  VAL(kw_singleImpl)
+  VAL(kw_branchFunnel)
+  VAL(kw_singleImplName)
+  VAL(kw_resByArg)
+  VAL(kw_byArg)
+  VAL(kw_uniformRetVal)
+  VAL(kw_uniqueRetVal)
+  VAL(kw_virtualConstProp)
+  VAL(kw_info)
+  VAL(kw_byte)
+  VAL(kw_bit)
+  VAL(kw_varFlags)
+  VAL(LabelID)
+  VAL(GlobalID)
+  VAL(LocalVarID)
+  VAL(AttrGrpID)
+  VAL(SummaryID)
+  VAL(LabelStr)
+  VAL(GlobalVar)
+  VAL(ComdatVar)
+  VAL(LocalVar)
+  VAL(MetadataVar)
+  VAL(StringConstant)
+  VAL(DwarfTag)
+  VAL(DwarfAttEncoding)
+  VAL(DwarfVirtuality)
+  VAL(DwarfLang)
+  VAL(DwarfCC)
+  VAL(EmissionKind)
+  VAL(NameTableKind)
+  VAL(DwarfOp)
+  VAL(DIFlag)
+  VAL(DISPFlag)
+  VAL(DwarfMacinfo)
+  VAL(ChecksumKind)
+  VAL(Type)
+  VAL(APFloat)
+  VAL(APSInt)
 
-  llvm::install_fatal_error_handler(&llvm_handler);
-//#ifdef LINK_POLLY_INTO_TOOLS
-//  polly::initializePollyPasses(*PRegistry);
-//#endif
-
-  py::class_<llvm::Module, std::shared_ptr<llvm::Module>>(m,"Module")
-    .def("dump", [=](std::shared_ptr<llvm::Module> lm) {
-        lm->print(llvm::dbgs(), nullptr, false, true);
-        return;
+        
+  lltok.export_values();
+    
+  py::class_<llvm::LLLexer, std::shared_ptr<llvm::LLLexer>>(m, "LLLexer")
+    .def("Lex", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->Lex();
     })
-    .def("__str__", [=](std::shared_ptr<llvm::Module> lm) {
-        std::string str;
-        llvm::raw_string_ostream rso(str);
-        lm->print(rso, nullptr, false, false);
-        return str;
+    .def("getStrVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->getStrVal();
     })
-    .def("clone", [=](std::shared_ptr<llvm::Module> lm) {
-        return llvm::CloneModule(lm.get());
+    .def("getTypeVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return ptr_wrapper<llvm::Type>(lm->getTyVal());
+    }, py::return_value_policy::reference)
+    .def("getUIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->getUIntVal();
     })
-    .def("timeFunction", [=](std::shared_ptr<llvm::Module> lm, std::string fn, unsigned int repeat=1) {
-      AutoJIT j;
-      j.addModule(llvm::CloneModule(lm.get()));
-
-      int r = setjmp(buffer);
-
-      double runtime = std::numeric_limits<double>::infinity();
-      if (r == 0) {
-        auto fun = (void (*)())j.getSymbolAddress(fn);
-        set_signal(handler);
-
-        struct timeval t1, t2;
-        gettimeofday(&t1,0);
-        for(int i=0; i<repeat; i++) {
-          fun();
-        }
-        gettimeofday(&t2,0);
-        unsigned long long runtime_ms = (todval(&t2)-todval(&t1))/1000;
-        runtime = runtime_ms/1000.0;
-      }
-
-    //  for(int i=0; i<sizeof(signal_types)/sizeof(*signal_types); i++) {
-    //    signal(signal_types[i], SIG_DFL);
-    //  }
-      return runtime;
+    .def("getUIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->getUIntVal();
     })
-    .def("getStats", [=](std::shared_ptr<llvm::Module> lm, std::string fn){
-      auto F = lm->getFunction(fn);
-      assert(F);
-      return getStats(*F);
+    .def("getAPSIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->getAPSIntVal().toString(10);
     })
-    .def("cleanup", [=](std::shared_ptr<llvm::Module> lm) {
-      //auto ctx = contexts[lm.get()];
-      //contexts.erase(lm.get());
-      //delete ctx;
+    .def("getAPFloatVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        llvm::SmallVector<char, 10> chars;
+        lm->getAPFloatVal().toString(chars);
+        return std::string(chars.data(), chars.size());
     });
-
-  py::class_<llvm::PassInfo>(m,"PassInfo")
-    .def("getPassName", [](llvm::PassInfo& pi) {
-    	return std::string(pi.getPassName());
+    
+    
+  py::class_<llvm::Type, ptr_wrapper<llvm::Type>>(m, "LLVMType")
+     #define NEX(a) .def(#a, [=](ptr_wrapper<llvm::Type> ty) { return ty->a(); })
+     NEX(isVoidTy)
+      NEX(isHalfTy)
+     NEX(isFloatTy)
+      NEX(isDoubleTy)
+      NEX(isX86_FP80Ty)
+      NEX(isFP128Ty )
+      NEX(isPPC_FP128Ty)
+      NEX(isX86_MMXTy )
+      NEX(isLabelTy)
+      NEX(isTokenTy)
+      NEX(isIntegerTy)      
+    .def("getIntWidth", [=](ptr_wrapper<llvm::Type> ty) {
+        return cast<IntegerType>(ty.get())->getBitWidth();
     })
-    .def("getPassArgument", [](llvm::PassInfo& pi) {
-    	return std::string(pi.getPassArgument());
-    })
-    .def("isAnalysis", &llvm::PassInfo::isAnalysis)
-    ;
+      ;
 
-  py::class_<clang::ASTUnit>(m,"ASTUnit")
-    .def("dump", [=](ASTUnit& ast) {
-        auto ad = clang::CreateASTDumper("", true, false, false);
-        ad->Initialize(ast.getASTContext());
-        ad->HandleTranslationUnit(ast.getASTContext());
-    });
-  m.def("getLLVM", getLLVM);
-  m.def("getOpts", getOpts, py::return_value_policy::take_ownership);
-  m.def("applyOpt", applyOpt);
-  m.def("applyOptLevel", applyOptLevel);
-  m.def("createBinary", createBinary);
+  llvm::SourceMgr *sm = new SourceMgr();
+  llvm::SMDiagnostic *sd = new SMDiagnostic();
+  m.def("lexer", [&](std::string s) {
+      llvm::LLVMContext &Ctx = *unwrap(LLVMGetGlobalContext());
+      //obvious memory leak, but need to do something with memory since not taken
+      return std::shared_ptr<llvm::LLLexer>(new llvm::LLLexer(*(new std::string(s)),  *sm, *sd, Ctx));
+  });
+  m.def("printErrors", [&]() {
+      sd->print("lexer", llvm::outs(), false);
+  });
 
 }

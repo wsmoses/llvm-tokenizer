@@ -20,11 +20,6 @@ find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
-if (NOT LLVM_PACKAGE_VERSION EQUAL 5.0.0)
-  message(STATUS  " Must use LLVM 5.0.0, but found " ${LLVM_PACKAGE_VERSION})
-  return()
-endif()
-
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
@@ -48,20 +43,13 @@ endforeach()
 
 message(STATUS "finding llvm libs: " ${trimmedlist})
 
-add_executable (pyllvm_test src/pyllvm_test)
-target_link_libraries(pyllvm_test
-    PRIVATE
-    "-Wl,--start-group"
-    ${trimmedlist}
-    "-Wl,--end-group"
-)
-
 target_link_libraries(pyllvm
     PRIVATE
     "-Wl,--start-group"
     ${trimmedlist}
     "-Wl,--end-group"
 )
+set_property(TARGET pyllvm PROPERTY CXX_STANDARD 14)
 
 
 #target_link_libraries(pyllvm

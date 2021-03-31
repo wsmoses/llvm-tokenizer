@@ -1,12 +1,3 @@
 [submodule "third-party/pybind11"]
 	path = third-party/pybind11
 	url = https://github.com/pybind/pybind11
-[submodule "third-party/clgen"]
-	path = third-party/clgen
-	url = git@github.com:Auto-Commutator/clgen.git
-[submodule "third-party/csmith"]
-	path = third-party/csmith
-	url = https://github.com/csmith-project/csmith.git
-[submodule "third-party/deap"]
-	path = third-party/deap
-	url = git@github.com:DEAP/deap.git

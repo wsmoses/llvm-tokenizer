@@ -55,7 +55,7 @@ class CMakeBuild(build_ext):
         print(env)
         if 'LLVM_PREFIX' not in env:
             #env['LLVM_PREFIX'] = str(subprocess.check_output(["/home/wmoses/git/Parallel-IR/build/bin/llvm-config", "--prefix"], universal_newlines=True)).rstrip('\n')
-            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-5.0", "--prefix"], universal_newlines=True)).rstrip('\n')
+            env['LLVM_PREFIX'] = str(subprocess.check_output(["llvm-config-10", "--prefix"], universal_newlines=True)).rstrip('\n')
         cmake_args.append("-DLLVM_PREFIX="+env["LLVM_PREFIX"])
         print(cmake_args)
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
@@ -71,18 +71,6 @@ class CMakeBuild(build_ext):
         #subprocess.check_call("%s configure --with-cuda" % (sys.executable,), cwd="./third-party/clgen", env=env, shell=True)
         #subprocess.check_call("make PYTHON=%s" % (sys.executable,), cwd="./third-party/clgen", env=env, shell=True)
 
-        ##CSmith
-        subprocess.check_call("./configure".split(" "), cwd="./third-party/csmith", env=env)
-        subprocess.check_call("make", cwd="./third-party/csmith", shell=True)
-        subprocess.check_call("make install", cwd="./third-party/csmith", shell=True)
-
-
-
-class CSmithExtension(Extension):
-    def __init__(self, name, sourcedir=''):
-        Extension.__init__(self, name, sources=[])
-        self.sourcedir = os.path.abspath(sourcedir)
-
 setup(
     name='pyllvm',
     version='0.0.1',
@@ -90,7 +78,7 @@ setup(
     author_email='wmoses@mit.edu',
     description='Some python LLVM bindings',
     long_description='',
-    install_requires=['deap','boto3', 'fabric'],
+    install_requires=[],
     ext_modules=[CMakeExtension('pyllvm')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
