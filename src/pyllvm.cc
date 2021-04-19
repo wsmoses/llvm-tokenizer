@@ -476,6 +476,12 @@ PYBIND11_MODULE(pyllvm, m) {
     .def("Lex", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->Lex();
     })
+    .def("Lex2", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        char* str1 = lm->getLoc().getPointer();
+        lm->Lex(); 
+        char* str2 = lm->getLoc().getPointer();
+        return std::string str(str1,str2-str1);
+    })
     .def("getStrVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getStrVal();
     })
