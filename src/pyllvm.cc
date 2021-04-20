@@ -480,13 +480,16 @@ PYBIND11_MODULE(pyllvm, m) {
         std::string tok(str1,str2-str1);
         return std::make_pair(toktype,tok);
     })
-    // .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
-    //     const char* str1 = lm->getLoc().getPointer();
-    //     lm->Lex(); 
-    //     const char* str2 = lm->getLoc().getPointer();
-    //     std::string result(str1,str2-str1);
-    //     return result;
-    // })
+    .def("getTokType", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        return lm->Lex();
+    })
+    .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
+        const char* str1 = lm->getLoc().getPointer();
+        lm->Lex(); 
+        const char* str2 = lm->getLoc().getPointer();
+        std::string result(str1,str2-str1);
+        return result;
+    })
     .def("getStrVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getStrVal();
     })
