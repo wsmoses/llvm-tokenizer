@@ -478,10 +478,7 @@ PYBIND11_MODULE(pyllvm, m) {
         llvm::lltok::Kind toktype = lm->Lex(); 
         const char* str2 = lm->getLoc().getPointer();
         std::string tok(str1,str2-str1);
-        std::vector<std::variant<llvm::lltok::Kind,std::string>> res; 
-        res.push_back(toktype)
-        res.push_back(tok)
-        return res;
+        return std::make_pair(toktype,tok);
     })
     // .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
     //     const char* str1 = lm->getLoc().getPointer();
