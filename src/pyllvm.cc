@@ -473,16 +473,23 @@ PYBIND11_MODULE(pyllvm, m) {
   lltok.export_values();
     
   py::class_<llvm::LLLexer, std::shared_ptr<llvm::LLLexer>>(m, "LLLexer")
-    .def("getTokType", [=](std::shared_ptr<llvm::LLLexer> lm) {
-        return lm->Lex();
-    })
-    .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getTok", [=](std::shared_ptr<llvm::LLLexer> lm) {
         const char* str1 = lm->getLoc().getPointer();
-        lm->Lex(); 
+        llvm::lltok::Kind toktype = lm->Lex(); 
         const char* str2 = lm->getLoc().getPointer();
-        std::string result(str1,str2-str1);
-        return result;
+        std::string tok(str1,str2-str1);
+        std::vector<std::variant<llvm::lltok::Kind,std::string>> res; 
+        res.push_back(toktype)
+        res.push_back(tok)
+        return res;
     })
+    // .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    //     const char* str1 = lm->getLoc().getPointer();
+    //     lm->Lex(); 
+    //     const char* str2 = lm->getLoc().getPointer();
+    //     std::string result(str1,str2-str1);
+    //     return result;
+    // })
     .def("getStrVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getStrVal();
     })
