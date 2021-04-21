@@ -473,7 +473,7 @@ PYBIND11_MODULE(pyllvm, m) {
   lltok.export_values();
     
   py::class_<llvm::LLLexer, std::shared_ptr<llvm::LLLexer>>(m, "LLLexer")
-    .def("getTok", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getTok", [](std::shared_ptr<llvm::LLLexer> lm) {
         const char* str1 = lm->getLoc().getPointer();
         llvm::lltok::Kind toktype = lm->Lex(); 
         const char* str2 = lm->getLoc().getPointer();
