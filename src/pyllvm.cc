@@ -26,7 +26,7 @@ using namespace llvm;
 #include "llvm/AsmParser/LLLexer.h"
 #include "llvm/AsmParser/LLToken.h"
 
-    template <class T> class ptr_wrapper
+template <class T> class ptr_wrapper
 {
     public:
         ptr_wrapper() : ptr(nullptr) {}
@@ -473,11 +473,24 @@ PYBIND11_MODULE(pyllvm, m) {
   lltok.export_values();
     
   py::class_<llvm::LLLexer, std::shared_ptr<llvm::LLLexer>>(m, "LLLexer")
+    // .def("init",[=](std::shared_ptr<llvm::LLLexer> lm){
+    //     return lm->getLoc().getPointer();
+    // })
     .def("getTok", [=](std::shared_ptr<llvm::LLLexer> lm) {
         const char* str1 = lm->getLoc().getPointer();
         llvm::lltok::Kind toktype = lm->Lex(); 
-        const char* str2 = lm->getLoc().getPointer();
-        std::string tok(str1,str2-str1);
+        if(toktype == llvm::lltok::Eof){
+            llvm::errs() << "EOF HERE!!" << toktype << "\n"; 
+            return std::make_pair(toktype,std::string("EOF"));
+        }
+        const char* str2 = lm->getLoc().getPointer(); 
+        std::string tok; 
+        if(str2 >= str1){
+            tok = std::string(str1,str2-str1); 
+        }else{ 
+            llvm::errs() << "PROBLEM!!!!" << toktype << "\n"; 
+        }
+        llvm::errs() << tok << " " << toktype << "\n"; 
         return std::make_pair(toktype,tok);
     })
     .def("getTokType", [=](std::shared_ptr<llvm::LLLexer> lm) {
@@ -496,9 +509,6 @@ PYBIND11_MODULE(pyllvm, m) {
     .def("getTypeVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return ptr_wrapper<llvm::Type>(lm->getTyVal());
     }, py::return_value_policy::reference)
-    .def("getUIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
-        return lm->getUIntVal();
-    })
     .def("getUIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getUIntVal();
     })
@@ -530,9 +540,9 @@ PYBIND11_MODULE(pyllvm, m) {
     })
       ;
 
-  llvm::SourceMgr *sm = new SourceMgr();
+  llvm::SourceMgr *sm = new SourceMgr(); 
   llvm::SMDiagnostic *sd = new SMDiagnostic();
-  m.def("lexer", [&](std::string s) {
+  m.def("lexer", [&](std::string &s) {
       llvm::LLVMContext &Ctx = *unwrap(LLVMGetGlobalContext());
       //obvious memory leak, but need to do something with memory since not taken
       return std::shared_ptr<llvm::LLLexer>(new llvm::LLLexer(*(new std::string(s)),  *sm, *sd, Ctx));
