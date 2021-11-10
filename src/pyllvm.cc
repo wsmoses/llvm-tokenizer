@@ -5,19 +5,23 @@
 #include <memory>
 #include <string>
 #include <cstring>
-
+#include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <sys/time.h>
 
 #include <llvm/AsmParser/LLLexer.h>
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/AsmParser/LLParser.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm-c/Core.h>
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Module.h"
+
 
 namespace py = pybind11;
 using namespace llvm;
@@ -25,6 +29,8 @@ using namespace llvm;
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/AsmParser/LLLexer.h"
 #include "llvm/AsmParser/LLToken.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/AsmParser/SlotMapping.h"
 
 template <class T> class ptr_wrapper
 {
@@ -48,10 +54,14 @@ PYBIND11_MODULE(pyllvm, m) {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
+
   llvm::lltok::Kind tok;
+
+
     
-  auto lltok = py::enum_<llvm::lltok::Kind>(m, "lltok", py::arithmetic());
-  #define VAL(x) lltok.value(#x, llvm::lltok::x);
+  auto lltok = m.def_submodule("lltok");
+  
+  #define VAL(x) lltok.attr(#x) = pybind11::int_((size_t)llvm::lltok::x);
   VAL(Eof)
   VAL(Error)
   VAL(dotdotdot)
@@ -468,54 +478,62 @@ PYBIND11_MODULE(pyllvm, m) {
   VAL(Type)
   VAL(APFloat)
   VAL(APSInt)
-
-        
-  lltok.export_values();
     
   py::class_<llvm::LLLexer, std::shared_ptr<llvm::LLLexer>>(m, "LLLexer")
-    // .def("init",[=](std::shared_ptr<llvm::LLLexer> lm){
-    //     return lm->getLoc().getPointer();
-    // })
-    .def("getTok", [=](std::shared_ptr<llvm::LLLexer> lm) {
-        const char* str1 = lm->getLoc().getPointer();
-        llvm::lltok::Kind toktype = lm->Lex(); 
-        if(toktype == llvm::lltok::Eof){
-            llvm::errs() << "EOF HERE!!" << toktype << "\n"; 
-            return std::make_pair(toktype,std::string("EOF"));
+    .def("getTok", [](std::shared_ptr<llvm::LLLexer> lm) {
+        try {
+            const char* str1 = lm->getLoc().getPointer();
+            auto toktype = (size_t)lm->Lex(); 
+            const char* str2 = lm->getLoc().getPointer(); 
+            // llvm::errs() << (void*) str1 << " " << (void*) str2 << " " << toktype << "\n";
+
+            std::string tok; 
+            if(str2 >= str1){
+                if(str1== nullptr){
+                    llvm::errs() << "PROBLEM1111 " << toktype << "\n"; 
+                    return std::make_pair(toktype,std::string("")); 
+                }else{ 
+                    tok = std::string(str1,str2-str1); 
+                }
+            }else{ 
+                llvm::errs() << "PROBLEM2 " << toktype << "\n"; 
+                return std::make_pair(toktype,std::string("")); 
+            }
+            return std::make_pair(toktype,tok);
+        }catch(std::exception const& e){
+            llvm::errs() << "PROBLEM3" << "\n"; 
+            std::cout << "Exception: " << e.what() << "\n";
         }
-        const char* str2 = lm->getLoc().getPointer(); 
-        std::string tok; 
-        if(str2 >= str1){
-            tok = std::string(str1,str2-str1); 
-        }else{ 
-            llvm::errs() << "PROBLEM!!!!" << toktype << "\n"; 
-        }
-        llvm::errs() << tok << " " << toktype << "\n"; 
-        return std::make_pair(toktype,tok);
+       
     })
-    .def("getTokType", [=](std::shared_ptr<llvm::LLLexer> lm) {
-        return lm->Lex();
+
+    .def("getFirstTok", [](std::shared_ptr<llvm::LLLexer> lm) {
+        auto toktype = (size_t)lm->Lex(); 
+        return std::make_pair(toktype,std::string(""));
     })
-    .def("getTokStr", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getTokType", [](std::shared_ptr<llvm::LLLexer> lm) {
+        return (size_t)lm->Lex();
+    })
+    .def("getTokStr", [](std::shared_ptr<llvm::LLLexer> lm) {
         const char* str1 = lm->getLoc().getPointer();
         lm->Lex(); 
         const char* str2 = lm->getLoc().getPointer();
         std::string result(str1,str2-str1);
         return result;
     })
-    .def("getStrVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getStrVal", [](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getStrVal();
     })
-    .def("getTypeVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getTypeVal", [](std::shared_ptr<llvm::LLLexer> lm) {
         return ptr_wrapper<llvm::Type>(lm->getTyVal());
     }, py::return_value_policy::reference)
-    .def("getUIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getUIntVal", [](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getUIntVal();
     })
-    .def("getAPSIntVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getAPSIntVal", [](std::shared_ptr<llvm::LLLexer> lm) {
         return lm->getAPSIntVal().toString(10);
     })
-    .def("getAPFloatVal", [=](std::shared_ptr<llvm::LLLexer> lm) {
+    .def("getAPFloatVal", [](std::shared_ptr<llvm::LLLexer> lm) {
         llvm::SmallVector<char, 10> chars;
         lm->getAPFloatVal().toString(chars);
         return std::string(chars.data(), chars.size());
@@ -540,15 +558,46 @@ PYBIND11_MODULE(pyllvm, m) {
     })
       ;
 
-  llvm::SourceMgr *sm = new SourceMgr(); 
-  llvm::SMDiagnostic *sd = new SMDiagnostic();
+llvm::SourceMgr *sm = new SourceMgr();
+llvm::SMDiagnostic *sd = new SMDiagnostic();
   m.def("lexer", [&](std::string &s) {
       llvm::LLVMContext &Ctx = *unwrap(LLVMGetGlobalContext());
       //obvious memory leak, but need to do something with memory since not taken
       return std::shared_ptr<llvm::LLLexer>(new llvm::LLLexer(*(new std::string(s)),  *sm, *sd, Ctx));
   });
-  m.def("printErrors", [&]() {
-      sd->print("lexer", llvm::outs(), false);
-  });
+//   m.def("printErrors", [&]() {
+//       sd->print("lexer", llvm::outs(), false);
+//   });
+
+
+//   m.def("parseArgList", [&](std::string &s)  {
+//       llvm::StringRef str = StringRef(s);
+//       llvm::SourceMgr smSourceMgr; 
+//       llvm::SMDiagnostic sd;
+//       llvm::LLVMContext &TheContext = *unwrap(LLVMGetGlobalContext());
+//       llvm::Module M("parse type", TheContext); 
+//       //const llvm::SlotMapping *Slots; 
+//       ModuleSummaryIndex MSI(true);
+//       llvm::errs() << str << "\n"; 
+//       LLParser ll(str, smSourceMgr, sd, &M, &MSI, TheContext);
+//       SmallVector<LLParser::ArgInfo, 4>args;
+//       bool isVarArg = false;
+//       std::vector<llvm::Type*> types;
+//       for(auto info : args){
+//           types.push_back(info.Ty);
+//       }
+//       sd.print("carl",llvm::errs());
+//       return std::make_pair(types, isVarArg);
+//   });
+//   m.def("parseType", [&](std::string &s) -> std::string {
+//       llvm::StringRef str = StringRef(s);
+//       llvm::LLVMContext &TheContext = *unwrap(LLVMGetGlobalContext());
+//       std::unique_ptr<llvm::Module> M = std::make_unique<Module>("parse type", TheContext); 
+//       //const llvm::SlotMapping *Slots; 
+//       unsigned Read = 0; 
+//       if (llvm::parseTypeAtBeginning(str, Read,  *sd, *M))
+//         return s.substr(0, Read);
+//        else return "";
+//   });
 
 }
